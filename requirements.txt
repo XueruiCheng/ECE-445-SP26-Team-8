@@ -1,0 +1,24 @@
+# Facial Quantum Matching Mirror — Python Dependencies
+# Install with: pip3 install -r requirements.txt --break-system-packages
+
+# Camera and image processing
+opencv-python-headless==4.9.0.80
+Pillow>=10.0.0
+
+# Face detection and embedding
+onnxruntime>=1.17.0
+
+# Math and data
+numpy>=1.24.0
+
+# Display
+pygame>=2.5.0
+
+# Bluetooth communication with ESP32
+PyBluez==0.23
+
+# Utilities
+scipy>=1.11.0
+
+# Testing
+pytest>=7.0.0
