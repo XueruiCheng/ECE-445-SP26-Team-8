@@ -14,6 +14,7 @@ The Facial Quantum Matching Mirror is an interactive display that uses a one-way
 - **ESP32 WROOM-32** — handles button input, foot pedal, and LED control; communicates with the Pi over Bluetooth
 - **21.5" IPS Monitor (350+ cd/m²)** — displays matched result behind one-way mirror
 - **WS2812B LED Strip** — visual feedback during activation and processing
+- **1TB USB External Storage** — stores database images, embeddings, and model files (mounted at `/mnt/storage`)
 - **18x24" Two-Way Mirror Glass (70% reflective)** — acts as a mirror when idle, transparent when display is active
 
 ## Software Stack
@@ -32,7 +33,7 @@ The Facial Quantum Matching Mirror is an interactive display that uses a one-way
 ## Project Structure
 
 ```
-mirror-backend/
+mirror-backend/                    # On microSD (Pi boot drive)
 ├── main.py                  # Main loop — listens for ESP32 signal, runs pipeline
 ├── capture.py               # Camera capture utilities
 ├── face_detect.py           # Face detection and cropping
@@ -41,21 +42,43 @@ mirror-backend/
 ├── display.py               # Fullscreen display of matched result
 ├── bluetooth_listener.py    # Bluetooth communication with ESP32
 ├── precompute_embeddings.py # Offline script to generate database embeddings
+├── config.py                # Paths, mount points, and settings
+└── requirements.txt
+
+/mnt/storage/                      # 1TB USB external drive
 ├── models/
 │   └── mobilefacenet.onnx   # Pretrained MobileFaceNet model
-├── database/
-│   ├── scientists/
-│   │   ├── embeddings.npy   # Precomputed embedding vectors
-│   │   ├── metadata.json    # Name, image path, etc.
-│   │   └── images/          # Display images for each figure
-│   ├── engineers/
-│   └── entrepreneurs/
-└── requirements.txt
+└── database/
+    ├── scientists/
+    │   ├── embeddings.npy   # Precomputed embedding vectors
+    │   ├── metadata.json    # Name, image path, etc.
+    │   └── images/          # Display images for each figure
+    ├── engineers/
+    └── entrepreneurs/
 ```
 
 ## Setup
 
-### 1. Install Dependencies
+### 1. Mount External Storage
+
+Plug in the 1TB USB drive. Find the device name and mount it:
+
+```bash
+# Identify the drive
+lsblk
+
+# Create mount point and mount (replace sdX1 with your device)
+sudo mkdir -p /mnt/storage
+sudo mount /dev/sdX1 /mnt/storage
+
+# Auto-mount on boot — add this line to /etc/fstab:
+# /dev/sdX1  /mnt/storage  ext4  defaults,nofail  0  2
+echo '/dev/sdX1  /mnt/storage  ext4  defaults,nofail  0  2' | sudo tee -a /etc/fstab
+```
+
+> **Tip:** If the drive is NTFS or exFAT, install the appropriate driver (`sudo apt install exfat-fuse exfat-utils` or `ntfs-3g`). We recommend formatting as **ext4** for best performance on Linux.
+
+### 2. Install Dependencies
 
 ```bash
 sudo apt update && sudo apt upgrade -y
@@ -63,7 +86,7 @@ sudo apt install -y python3-opencv python3-pip libatlas-base-dev
 pip3 install onnxruntime numpy pygame pybluez --break-system-packages
 ```
 
-### 2. Precompute Database Embeddings (Run on Laptop)
+### 3. Precompute Database Embeddings (Run on Laptop)
 
 Collect a high-quality reference photo for each famous figure. Then run:
 
@@ -73,13 +96,18 @@ python3 precompute_embeddings.py --category scientists --images-dir ./raw_images
 
 This generates `embeddings.npy` and `metadata.json` for each category. Copy the `database/` folder to the Pi.
 
-### 3. Transfer to Raspberry Pi
+### 4. Transfer to Raspberry Pi
 
 ```bash
+# Code goes on the microSD
 scp -r mirror-backend/ pi@<PI_IP>:~/mirror-backend/
+
+# Database and models go on the external drive
+scp -r database/ pi@<PI_IP>:/mnt/storage/database/
+scp -r models/ pi@<PI_IP>:/mnt/storage/models/
 ```
 
-### 4. Run
+### 5. Run
 
 ```bash
 cd ~/mirror-backend
@@ -108,6 +136,7 @@ The system will start in idle mode (black screen) and wait for a Bluetooth signa
 - Only the selected category's embeddings are compared, keeping the search space small.
 - NumPy vectorized operations handle the similarity computation in a single pass.
 - The Pi 4 with 4GB RAM comfortably handles MobileFaceNet + OpenCV + Pygame simultaneously.
+- **Storage:** Embeddings and model files are loaded from the USB drive into RAM at boot. The 1TB drive stores all images, but since display images are read one at a time, USB 3.0 read speeds (~100+ MB/s) add negligible latency. For best results, use an SSD over an HDD to avoid seek time delays.
 
 ## Bluetooth Protocol
 
