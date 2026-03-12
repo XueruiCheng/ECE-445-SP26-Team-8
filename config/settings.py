@@ -1,18 +1,31 @@
 """
 settings.py — Central configuration for the Facial Quantum Matching Mirror.
 
-Update STORAGE_ROOT if your external drive mounts somewhere other than /mnt/storage.
+Paths:
+  - ASSETS_DIR: Famous figures' images, checked into the repo under assets/
+  - STORAGE_ROOT: External drive on the Pi for model weights and embeddings.
+                  Override with MIRROR_STORAGE_ROOT env var for local dev.
 """
 
 import os
 
 # ──────────────────────────────────────────────
-# Storage paths
+# Project root (auto-detected from this file's location)
+# ──────────────────────────────────────────────
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+# ──────────────────────────────────────────────
+# Assets — images of famous figures (in repo)
+# ──────────────────────────────────────────────
+ASSETS_DIR = os.path.join(PROJECT_ROOT, "assets", "database")
+
+# ──────────────────────────────────────────────
+# External storage — model + embeddings (on USB drive or local_data/)
 # ──────────────────────────────────────────────
 STORAGE_ROOT = os.environ.get("MIRROR_STORAGE_ROOT", "/mnt/storage")
 
 MODEL_DIR = os.path.join(STORAGE_ROOT, "models")
-DATABASE_DIR = os.path.join(STORAGE_ROOT, "database")
+DATABASE_DIR = ASSETS_DIR  # Images come from the repo
 
 ONNX_MODEL_PATH = os.path.join(MODEL_DIR, "mobilefacenet.onnx")
 

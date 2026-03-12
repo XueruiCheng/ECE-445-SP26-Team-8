@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large binary files
+*.onnx
+*.npy
+
+# Local dev data directory (not needed — assets/ is in repo)
+local_data/
+
+# Logs
+*.log

@@ -37,7 +37,7 @@ sudo apt install -y \
 # ── 2. Python packages ───────────────────────
 echo ""
 echo "[3/5] Installing Python dependencies..."
-pip3 install -r requirements.txt --break-system-packages
+pip3 install -r requirements-pi.txt --break-system-packages
 
 # ── 3. Mount external storage ─────────────────
 echo ""

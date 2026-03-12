@@ -24,8 +24,18 @@ An interactive display that uses a one-way mirror and facial recognition to matc
 quantum-mirror/
 ├── README.md
 ├── requirements.txt             # Python dependencies (all platforms)
+├── requirements-pi.txt          # Additional Pi-only deps (includes Bluetooth)
 ├── setup.sh                     # One-time Raspberry Pi setup script
 ├── .gitignore
+│
+├── assets/                      # Famous figures' images (checked into repo)
+│   └── database/
+│       ├── scientists/
+│       │   └── images/          # e.g., einstein.jpg, curie.jpg
+│       ├── engineers/
+│       │   └── images/
+│       └── entrepreneurs/
+│           └── images/
 │
 ├── src/                         # Runtime code (runs on the Pi)
 │   ├── __init__.py
@@ -71,19 +81,16 @@ Data that lives on the 1TB external drive (NOT in the repo):
 /mnt/storage/
 ├── models/
 │   └── mobilefacenet.onnx       # ~4MB pretrained model
-└── database/
+└── embeddings/
     ├── scientists/
     │   ├── embeddings.npy       # Precomputed 512-D vectors
-    │   ├── metadata.json        # Names, titles, image filenames
-    │   └── images/              # Full-res display images
+    │   └── metadata.json        # Maps embedding index → image filename
     ├── engineers/
     │   ├── embeddings.npy
-    │   ├── metadata.json
-    │   └── images/
+    │   └── metadata.json
     └── entrepreneurs/
         ├── embeddings.npy
-        ├── metadata.json
-        └── images/
+        └── metadata.json
 ```
 
 ## Software Stack
@@ -95,140 +102,221 @@ Data that lives on the 1TB external drive (NOT in the repo):
 | Face Detection | OpenCV DNN with lightweight SSD |
 | Face Embedding | MobileFaceNet via ONNX Runtime |
 | Database | Precomputed `.npy` embeddings + `metadata.json` per category |
-| Matching | Cosine similarity (NumPy) |
+| Matching | Cosine similarity (NumPy / SciPy) |
 | Display | Pygame (fullscreen) |
-| Bluetooth | PyBluez (Bluetooth SPP) |
+| Bluetooth | PyBluez (Bluetooth SPP) — Pi only |
 | Testing | pytest |
 
-## Prerequisites
+---
 
-### All Platforms
+## Local Development Setup (Laptop / Desktop)
 
-- Python 3.11 or newer
+Use this to develop and test the facial recognition pipeline on your own machine. You do **not** need the Pi, ESP32, or any mirror hardware for local development.
+
+### Prerequisites
+
+**All platforms:**
+- Python 3.11 or newer — check with `python3 --version`
 - Git
-- A webcam (any USB webcam works for local testing)
+- A webcam (any USB webcam works, or you can test with static images)
 
-### macOS
-
+**macOS:**
 ```bash
 # Install Homebrew if you don't have it
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# Install Python and SDL2 (needed by Pygame)
+# Install Python and SDL2 (SDL2 is needed by Pygame)
 brew install python@3.11 sdl2 sdl2_image sdl2_mixer sdl2_ttf
+
+# Verify
+python3 --version   # Should show 3.11+
 ```
 
-### Windows
+**Windows:**
+1. Install Python 3.11+ from https://www.python.org/downloads/
+2. **Check "Add Python to PATH"** during installation
+3. Install Git from https://git-scm.com/downloads
+4. Verify in Command Prompt: `python --version`
 
-- Install Python 3.11+ from https://www.python.org/downloads/
-- Check "Add Python to PATH" during installation
-- Install Git from https://git-scm.com/downloads
-
-### Ubuntu / Debian (including Raspberry Pi OS)
-
+**Ubuntu / Debian:**
 ```bash
 sudo apt update
 sudo apt install -y python3 python3-pip python3-venv git
+
+# Verify
+python3 --version
 ```
 
-## Local Development Setup (Laptop / Desktop)
-
-Use this to develop and test the facial recognition pipeline on your own machine before deploying to the Pi. You do NOT need the Pi, ESP32, or any mirror hardware for local development.
-
-### 1. Clone the repo
+### Step 1 — Clone the repo
 
 ```bash
 git clone https://github.com/<your-org>/quantum-mirror.git
 cd quantum-mirror
 ```
 
-### 2. Create a virtual environment
+### Step 2 — Create and activate a virtual environment
 
 ```bash
 python3 -m venv venv
-
-# Activate it:
-# macOS / Linux:
-source venv/bin/activate
-# Windows:
-venv\Scripts\activate
 ```
 
-### 3. Install Python dependencies
+Activate it (you need to do this every time you open a new terminal):
+
+```bash
+# macOS / Linux:
+source venv/bin/activate
+
+# Windows (Command Prompt):
+venv\Scripts\activate
+
+# Windows (PowerShell):
+venv\Scripts\Activate.ps1
+```
+
+You should see `(venv)` at the start of your terminal prompt.
+
+### Step 3 — Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-> **Note on PyBluez:** PyBluez requires Bluetooth system libraries. On your laptop you may get an install error — this is fine. Bluetooth is only needed on the Pi. To skip it locally, install everything else manually:
-> ```bash
-> pip install opencv-python-headless Pillow onnxruntime numpy pygame scipy
-> ```
+Verify everything installed:
 
-### 4. Download the MobileFaceNet model
+```bash
+python -c "import cv2; print('OpenCV', cv2.__version__)"
+python -c "import onnxruntime; print('ONNX Runtime', onnxruntime.__version__)"
+python -c "import numpy; print('NumPy', numpy.__version__)"
+python -c "import pygame; print('Pygame', pygame.__version__)"
+python -c "import scipy; print('SciPy', scipy.__version__)"
+python -c "from PIL import Image; print('Pillow OK')"
+```
+
+All six should print without errors. If any fail, install them individually:
+
+```bash
+pip install opencv-python-headless Pillow onnxruntime numpy pygame scipy pytest
+```
+
+> **Note:** `PyBluez` is NOT in `requirements.txt` — it's Pi-only and would fail on macOS/Windows. You don't need Bluetooth for local development.
+
+### Step 4 — Set up local data directory
+
+The famous figures' images are already in the repo under `assets/`. You only need a local folder for the model and precomputed embeddings:
+
+```bash
+mkdir -p local_data/models
+mkdir -p local_data/embeddings/scientists
+mkdir -p local_data/embeddings/engineers
+mkdir -p local_data/embeddings/entrepreneurs
+```
+
+Tell the app to use this folder for model/embeddings:
+
+```bash
+# macOS / Linux:
+export MIRROR_STORAGE_ROOT="./local_data"
+
+# Windows (Command Prompt):
+set MIRROR_STORAGE_ROOT=./local_data
+
+# Windows (PowerShell):
+$env:MIRROR_STORAGE_ROOT="./local_data"
+```
+
+> **Tip:** Add the export line to your shell profile (`~/.bashrc`, `~/.zshrc`) so you don't have to set it every time.
+
+### Step 5 — Download the MobileFaceNet model
 
 ```bash
 python scripts/download_model.py
 ```
 
-This downloads `mobilefacenet.onnx` into a local `models/` directory for testing.
+This downloads `mobilefacenet.onnx` (~4MB) into `local_data/models/`. If the script isn't implemented yet, download the model manually and place it at `local_data/models/mobilefacenet.onnx`.
 
-### 5. Create a local test database
+### Step 6 — Add images to the database
 
-For local testing, create a small test database instead of using the full external drive:
+Drop clear, front-facing portrait photos of famous figures into the category folders under `assets/`:
+
+```
+assets/database/scientists/images/
+├── einstein.jpg
+├── curie.jpg
+├── hawking.jpg
+└── tesla.jpg
+```
+
+Image requirements:
+- JPEG or PNG format
+- At least 200x200 pixels
+- Clear, front-facing photo with one visible face
+- Filename becomes the figure's ID (e.g., `einstein.jpg` → id `einstein`)
+
+These images are checked into the repo so all teammates have them after cloning.
+
+### Step 7 — Precompute embeddings
+
+Generate the embedding vectors and metadata for a category:
 
 ```bash
-mkdir -p local_data/database/scientists/images
-mkdir -p local_data/database/engineers/images
-mkdir -p local_data/database/entrepreneurs/images
-mkdir -p local_data/models
+python scripts/precompute_embeddings.py --category scientists
 ```
 
-Then update `config/settings.py` temporarily:
+This reads images from `assets/database/scientists/images/` and creates two files in `local_data/embeddings/scientists/`:
+- `embeddings.npy` — NumPy array of 512-D vectors, one per figure
+- `metadata.json` — names, titles, and image paths for each figure
 
-```python
-STORAGE_ROOT = "./local_data"   # Change from "/mnt/storage" for local dev
-```
+Repeat for each category you want to test.
 
-Or set it via an environment variable (recommended so you don't accidentally commit the change):
-
-```bash
-export MIRROR_STORAGE_ROOT="./local_data"
-```
-
-### 6. Precompute embeddings for your test images
-
-Drop a few reference photos into `local_data/database/scientists/images/`, then:
-
-```bash
-python scripts/precompute_embeddings.py --category scientists --images-dir ./local_data/database/scientists/images/
-```
-
-### 7. Run tests
+### Step 8 — Run tests
 
 ```bash
 # Run all tests
 python -m pytest tests/ -v
 
-# Run a single test
+# Run a specific test file
 python -m pytest tests/test_capture.py -v
+
+# Run a specific test function
+python -m pytest tests/test_matcher.py::test_cosine_similarity -v
 ```
 
-### 8. Run the pipeline locally
+### Step 9 — Run the pipeline locally
 
 ```bash
 python -m src.main --local
 ```
 
-The `--local` flag skips Bluetooth and uses keyboard input to simulate the ESP32 signal.
+The `--local` flag does two things:
+- Skips Bluetooth and uses keyboard input to simulate the ESP32 signal
+- Uses a windowed Pygame display instead of fullscreen
+
+You should see a prompt to select a category. Press a key, and the system will capture from your webcam, run the matching pipeline, and display the result.
+
+### Troubleshooting (Local)
+
+**"No module named cv2"** — Run `pip install opencv-python-headless`
+
+**"No module named onnxruntime"** — Run `pip install onnxruntime`. On Apple Silicon Macs, you may need `pip install onnxruntime-silicon` instead.
+
+**Camera not found** — Check that your webcam is connected. Run `python -c "import cv2; print(cv2.VideoCapture(0).isOpened())"` — it should print `True`. If it prints `False`, try index 1: your built-in camera may be at index 0 and the USB webcam at index 1.
+
+**Pygame window doesn't appear** — On macOS, Pygame may need to run from the system Python, not from a venv. Try `pip install pygame --pre` for the latest build.
+
+**MIRROR_STORAGE_ROOT not set** — The app defaults to `/mnt/storage` which doesn't exist on your laptop. Make sure you set the environment variable (Step 4).
+
+---
 
 ## Raspberry Pi Setup (Production)
 
-### 1. Flash Raspberry Pi OS
+### Step 1 — Flash Raspberry Pi OS
 
-Use the Raspberry Pi Imager to flash **Raspberry Pi OS (64-bit)** onto your microSD card. Enable SSH and set your WiFi during imaging.
+Use the Raspberry Pi Imager to flash **Raspberry Pi OS (64-bit, Debian Bookworm)** onto your microSD card. During imaging, click the gear icon and:
+- Enable SSH
+- Set username to `pi`
+- Set your WiFi credentials
 
-### 2. Clone the repo onto the Pi
+### Step 2 — Clone the repo onto the Pi
 
 ```bash
 ssh pi@<PI_IP>
@@ -236,7 +324,7 @@ git clone https://github.com/<your-org>/quantum-mirror.git
 cd quantum-mirror
 ```
 
-### 3. Run the setup script
+### Step 3 — Run the setup script
 
 ```bash
 sudo bash setup.sh
@@ -244,38 +332,48 @@ sudo bash setup.sh
 
 This handles:
 - System package updates
-- Installing OS-level dependencies (OpenCV, Bluetooth, SDL2, etc.)
-- Installing Python dependencies from `requirements.txt`
+- Installing OS-level dependencies: OpenCV, Bluetooth libs, SDL2, etc.
+- Installing Python dependencies from `requirements-pi.txt` (includes PyBluez)
 - Mounting the 1TB external USB drive at `/mnt/storage`
 - Creating the database folder structure on the drive
-- Enabling Bluetooth service
+- Enabling the Bluetooth service
 
-### 4. Mount external storage (if setup.sh skipped it)
+### Step 4 — Mount external storage (if setup.sh skipped it)
 
 ```bash
 # Find your drive
 lsblk
 
-# Mount it
+# Mount it (replace sda1 with your actual device)
 sudo mkdir -p /mnt/storage
 sudo mount /dev/sda1 /mnt/storage
 
-# Make it permanent (add to /etc/fstab)
+# Make it permanent
 echo '/dev/sda1  /mnt/storage  ext4  defaults,nofail  0  2' | sudo tee -a /etc/fstab
 ```
 
-> **Tip:** Format the drive as ext4 for best Linux performance. If it's NTFS or exFAT, install drivers: `sudo apt install exfat-fuse exfat-utils` or `ntfs-3g`.
+> **Important:** Plug the drive into a **blue USB 3.0 port** on the Pi (not the black USB 2.0 ports). Format as ext4 for best performance. If the drive is NTFS or exFAT: `sudo apt install exfat-fuse exfat-utils` or `ntfs-3g`.
 
-### 5. Copy model and database to external drive
+### Step 5 — Copy model and embeddings to external drive
 
-From your laptop:
+From your laptop (images are already in the repo, so only model + embeddings need to go on the drive):
 
 ```bash
-scp models/mobilefacenet.onnx pi@<PI_IP>:/mnt/storage/models/
-scp -r local_data/database/ pi@<PI_IP>:/mnt/storage/database/
+scp local_data/models/mobilefacenet.onnx pi@<PI_IP>:/mnt/storage/models/
+scp -r local_data/embeddings/* pi@<PI_IP>:/mnt/storage/embeddings/
 ```
 
-### 6. Pair the ESP32 over Bluetooth
+Verify on the Pi:
+
+```bash
+ls /mnt/storage/models/
+# Should show: mobilefacenet.onnx
+
+ls /mnt/storage/embeddings/scientists/
+# Should show: embeddings.npy  metadata.json
+```
+
+### Step 6 — Pair the ESP32 over Bluetooth
 
 ```bash
 bluetoothctl
@@ -288,7 +386,7 @@ bluetoothctl
 > quit
 ```
 
-### 7. Run
+### Step 7 — Run
 
 ```bash
 cd ~/quantum-mirror
@@ -297,9 +395,9 @@ python3 -m src.main
 
 The system starts in idle mode (black screen) and waits for a Bluetooth signal from the ESP32.
 
-### 8. Auto-start on boot (optional)
+### Step 8 — Auto-start on boot (optional)
 
-Create a systemd service so the mirror starts automatically when the Pi powers on:
+Create a systemd service so the mirror starts automatically:
 
 ```bash
 sudo nano /etc/systemd/system/quantum-mirror.service
@@ -323,12 +421,20 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-Enable it:
+Enable and start:
 
 ```bash
 sudo systemctl enable quantum-mirror
 sudo systemctl start quantum-mirror
+
+# Check status
+sudo systemctl status quantum-mirror
+
+# View logs
+journalctl -u quantum-mirror -f
 ```
+
+---
 
 ## Pipeline Flow
 
@@ -395,8 +501,7 @@ The `embedding_index` maps to the corresponding row in `embeddings.npy`.
 - Only the selected category's embeddings are searched, keeping comparisons small.
 - NumPy vectorized cosine similarity handles matching in a single pass.
 - Pi 4 with 4GB RAM comfortably runs MobileFaceNet + OpenCV + Pygame simultaneously.
-- Use an SSD (not HDD) for the external drive — USB 3.0 reads at 100+ MB/s with no seek delay.
-- Plug the drive into a **blue USB 3.0 port** on the Pi, not the black USB 2.0 ports.
+- Use an SSD (not HDD) for the external drive to avoid seek delays.
 
 ## High-Level Requirements
 
