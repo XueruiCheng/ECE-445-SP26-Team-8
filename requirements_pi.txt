@@ -1,7 +1,1 @@
-# Additional dependencies for the Raspberry Pi
-# Install with: pip3 install -r requirements-pi.txt --break-system-packages
-
--r requirements.txt
-
-# Bluetooth communication with ESP32
 PyBluez==0.23

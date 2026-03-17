@@ -1,16 +1,11 @@
 #!/bin/bash
-# ─────────────────────────────────────────────────────────
-# setup.sh — One-time setup for the Facial Quantum Matching Mirror
-# Run on the Raspberry Pi 4 as: sudo bash setup.sh
-# ─────────────────────────────────────────────────────────
-
 set -e
 
 echo "========================================"
 echo " Quantum Mirror — Pi Setup"
 echo "========================================"
 
-# ── 1. System packages ────────────────────────
+# System packages
 echo ""
 echo "[1/5] Updating system packages..."
 sudo apt update && sudo apt upgrade -y
@@ -34,12 +29,12 @@ sudo apt install -y \
     exfat-fuse \
     exfat-utils
 
-# ── 2. Python packages ───────────────────────
+# Python packages
 echo ""
 echo "[3/5] Installing Python dependencies..."
 pip3 install -r requirements-pi.txt --break-system-packages
 
-# ── 3. Mount external storage ─────────────────
+# Mount external storage
 echo ""
 echo "[4/5] Setting up external storage mount..."
 sudo mkdir -p /mnt/storage
@@ -70,7 +65,7 @@ for category in scientists engineers entrepreneurs; do
 done
 sudo chown -R $USER:$USER /mnt/storage
 
-# ── 4. Bluetooth setup ───────────────────────
+# Bluetooth setup
 echo ""
 echo "[5/5] Enabling Bluetooth..."
 sudo systemctl enable bluetooth
