@@ -14,7 +14,7 @@ def load_database():
     """
     if not os.path.exists(OUT_EMBEDDINGS) or not os.path.exists(OUT_NAMES):
         raise FileNotFoundError(
-            "Embedding database not found. Run model/embed_database.py first."
+            "Embedding database not found. Run model/embed_dataset.py first."
         )
     embeddings = np.load(OUT_EMBEDDINGS)
     with open(OUT_NAMES) as f:
