@@ -1,20 +1,9 @@
 import os
-import sys
 import cv2
 import insightface
 import numpy as np
-from settings import DATA_DIR
-from face_match import load_database, find_top_matches
-
-# need this to go 1 level up in the sys directory
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-CAPTURED_FACE_PATH = os.path.join(DATA_DIR, "captured_face.jpg")
-
-# live camera feed parameters
-WARMUP_FRAMES = 30
-MIN_DET_SCORE = 0.7
-FRAMES_TO_COLLECT = 15
+from model.settings import CAPTURED_FACE_PATH, WARMUP_FRAMES, MIN_DET_SCORE, FRAMES_TO_COLLECT
+from model.face_match import load_database, find_top_matches
 
 app = insightface.app.FaceAnalysis(name="buffalo_l")
 app.prepare(ctx_id=0, det_size=(320, 320))

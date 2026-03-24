@@ -1,7 +1,7 @@
 import math
 
 from scrapling.fetchers import StealthySession
-from settings import PERIMETER_PEOPLE_URL
+from .settings import PERIMETER_PEOPLE_URL
 from bs4 import BeautifulSoup
 
 

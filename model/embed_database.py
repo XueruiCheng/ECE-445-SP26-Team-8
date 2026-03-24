@@ -1,12 +1,10 @@
 import json
 import os
-import sys
 import cv2
 import insightface
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from settings import RAW_IMAGES_DIR, OUT_EMBEDDINGS, OUT_NAMES
+from .settings import RAW_IMAGES_DIR, OUT_EMBEDDINGS, OUT_NAMES
 
 
 def filename_to_display_name(filename: str) -> str:

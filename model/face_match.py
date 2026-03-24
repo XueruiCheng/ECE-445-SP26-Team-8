@@ -3,23 +3,21 @@ import os
 
 import numpy as np
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-EMBEDDINGS_PATH = os.path.join(DATA_DIR, "embeddings.npy")
-NAMES_PATH = os.path.join(DATA_DIR, "names.json")
+from .settings import OUT_EMBEDDINGS, OUT_NAMES
 
 
 def load_database():
     """
     Load precomputed embeddings and names from disk
-    This function should only be called once at startup 
+    This function should only be called once at startup
     with results kept in memory (embeddings.npy)
     """
-    if not os.path.exists(EMBEDDINGS_PATH) or not os.path.exists(NAMES_PATH):
+    if not os.path.exists(OUT_EMBEDDINGS) or not os.path.exists(OUT_NAMES):
         raise FileNotFoundError(
-            "Embedding database not found. Run src/embed_database.py first."
+            "Embedding database not found. Run model/embed_database.py first."
         )
-    embeddings = np.load(EMBEDDINGS_PATH)
-    with open(NAMES_PATH) as f:
+    embeddings = np.load(OUT_EMBEDDINGS)
+    with open(OUT_NAMES) as f:
         names = json.load(f)
     return embeddings, names
 

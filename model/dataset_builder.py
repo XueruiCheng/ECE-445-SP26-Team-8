@@ -1,16 +1,13 @@
 import json
 import os
 import re
-import sys
 import time
 
 import requests
 from bs4 import BeautifulSoup
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from settings import BASE_URL, PROFILES_PATH, RAW_IMAGES_DIR
-from web_scraper import scrape_perimeter_people
+from .settings import BASE_URL, PROFILES_PATH, RAW_IMAGES_DIR
+from .web_scraper import scrape_perimeter_people
 
 HEADERS = {
     "User-Agent": (
