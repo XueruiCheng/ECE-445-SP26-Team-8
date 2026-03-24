@@ -16,7 +16,7 @@ def filename_to_display_name(filename: str) -> str:
 
 
 def build_database():
-    app = insightface.app.FaceAnalysis(name="buffalo_sc")
+    app = insightface.app.FaceAnalysis(name="buffalo_l")
     app.prepare(ctx_id=0, det_size=(320, 320))
 
     embeddings = []
@@ -42,10 +42,14 @@ def build_database():
             skipped.append(filename)
             continue
 
-        # Take the highest-confidence face (first in InsightFace's sorted list)
+        # Take the highest-confidence face
         face = faces[0]
-        embedding = face.embedding
 
+        if face.embedding is None:
+            skipped.append(filename)
+            continue
+
+        embedding = face.embedding
         name = filename_to_display_name(filename)
         embeddings.append(embedding)
         names.append(name)

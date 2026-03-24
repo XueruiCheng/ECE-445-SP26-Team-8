@@ -1,9 +1,22 @@
+import os
+import sys
 import cv2
 import insightface
+import numpy as np
+from settings import DATA_DIR
+from face_match import load_database, find_top_matches
 
-from face_match import load_database, find_match, MATCH_THRESHOLD
+# need this to go 1 level up in the sys directory
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-app = insightface.app.FaceAnalysis(name="buffalo_sc")
+CAPTURED_FACE_PATH = os.path.join(DATA_DIR, "captured_face.jpg")
+
+# live camera feed parameters
+WARMUP_FRAMES = 30
+MIN_DET_SCORE = 0.7
+FRAMES_TO_COLLECT = 15
+
+app = insightface.app.FaceAnalysis(name="buffalo_l")
 app.prepare(ctx_id=0, det_size=(320, 320))
 
 db_embeddings, db_names = load_database()
@@ -14,6 +27,11 @@ cap = cv2.VideoCapture(0)
 if not cap.isOpened():
     raise RuntimeError("Could not open webcam")
 
+frame_count = 0
+collected_embeddings = []
+best_frame = None
+best_face = None
+
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -21,17 +39,59 @@ while True:
 
     faces = app.get(frame)
 
+    # Show live feed with bound box
+    display = frame.copy()
     for face in faces:
-        name, score = find_match(face.embedding, db_embeddings, db_names)
+        if face.embedding is None:
+            continue
+        x1, y1, x2, y2 = [int(v) for v in face.bbox]
+        cv2.rectangle(display, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-        if score >= MATCH_THRESHOLD:
-            cap.release()
-            print(f"Matched: {name} (score: {score:.2f})")
-            exit(0)
+    if frame_count < WARMUP_FRAMES:
+        remaining = WARMUP_FRAMES - frame_count
+        cv2.putText(display, f"Warming up... {remaining}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
+        cv2.imshow("Face Similarity", display)
+        frame_count += 1
+        if cv2.waitKey(1) & 0xFF == 27:
+            break
+        continue
 
-    # ESC to cancel
+    for face in faces:
+        if face.embedding is None:
+            continue
+        if face.det_score < MIN_DET_SCORE:
+            continue
+
+        collected_embeddings.append(face.embedding)
+        best_frame = frame.copy()
+        best_face = face
+
+    collected = len(collected_embeddings)
+    cv2.putText(display, f"Collecting: {collected}/{FRAMES_TO_COLLECT}", (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
+    cv2.imshow("Face Similarity", display)
+    frame_count += 1
+
+    if collected >= FRAMES_TO_COLLECT:
+        avg_embedding = np.mean(collected_embeddings, axis=0)
+        matches = find_top_matches(avg_embedding, db_embeddings, db_names, n=3)
+
+        print("\nTop matches:")
+        for i, (name, score) in enumerate(matches, 1):
+            print(f"  {i}. {name} ({score:.3f})")
+
+        if best_face is not None:
+            x1, y1, x2, y2 = [int(v) for v in best_face.bbox]
+            face_crop = best_frame[y1:y2, x1:x2]
+            cv2.imwrite(CAPTURED_FACE_PATH, face_crop)
+            print(f"Captured face saved to: {CAPTURED_FACE_PATH}")
+
+        break
+    
+    # ESC key will cancel
     if cv2.waitKey(1) & 0xFF == 27:
         break
 
 cap.release()
-print("No confident match found.")
+cv2.destroyAllWindows()
