@@ -17,6 +17,7 @@ OUT_NAMES = os.path.join(DATA_DIR, "names.json")
 CAPTURED_FACE_PATH = os.path.join(DATA_DIR, "captured_face.jpg")
 
 # live camera feed parameters
-WARMUP_FRAMES = 30
+WARMUP_FRAMES = 10
 MIN_DET_SCORE = 0.7
-FRAMES_TO_COLLECT = 15
+FRAMES_TO_COLLECT = 6
+INFERENCE_EVERY_N_FRAMES = 3
