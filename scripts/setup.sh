@@ -28,28 +28,13 @@ fi
 source "$VENV_DIR/bin/activate"
 
 # Install dependencies
-echo "Installing Python dependencies..."
 pip install --upgrade pip
 pip install -r "$REPO_DIR/requirements.txt"
 
-# Create data directories
-echo "Creating data directories..."
-mkdir -p "$REPO_DIR/model/data/raw_images"
-mkdir -p "$REPO_DIR/assets/database/scientists/images"
-mkdir -p "$REPO_DIR/assets/database/engineers/images"
-mkdir -p "$REPO_DIR/assets/database/entrepreneurs/images"
-
 # Crawling and downloading images
 echo ""
-echo "Scraping profiles and downloading images..."
 python3 -m model.dataset_builder
 
 # Generate embeddings
 echo ""
-echo "This will download the InsightFace model on first run (~300MB)..."
 python3 -m model.embed_dataset
-
-echo ""
-echo "To run the face matcher:"
-echo "  source venv/bin/activate"
-echo "  python3 main.py"
