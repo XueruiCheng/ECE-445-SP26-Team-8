@@ -1,7 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+import os
+
+DIST_DIR = "display/frontend/dist/frontend/browser"
 
 app = FastAPI(title="Quantum Mirror")
 app.add_middleware(
@@ -20,14 +23,18 @@ app.add_middleware(
 # Serve scientist images from the dataset
 app.mount("/images", StaticFiles(directory="model/data/raw_images"), name="images")
 
-# Serve Angular build output
-app.mount("/static", StaticFiles(directory="display/frontend/dist/frontend/browser"), name="static")
+# Serve media files (fonts, etc.)
+app.mount("/media", StaticFiles(directory=f"{DIST_DIR}/media"), name="media")
 
 @app.get("/")
 async def root():
-    return FileResponse("display/frontend/dist/frontend/browser/index.html")
+    return FileResponse(f"{DIST_DIR}/index.html")
 
-# SPA catch-all: serve index.html for any non-API, non-static route
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
-    return FileResponse("display/frontend/dist/frontend/browser/index.html")
+    # Serve actual files (JS, CSS, etc.) if they exist
+    file_path = os.path.join(DIST_DIR, full_path)
+    if os.path.isfile(file_path):
+        return FileResponse(file_path)
+    # Otherwise serve index.html for SPA routing
+    return FileResponse(f"{DIST_DIR}/index.html")
