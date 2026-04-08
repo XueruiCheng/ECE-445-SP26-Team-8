@@ -1,7 +1,19 @@
 import { Routes } from '@angular/router';
-import { ProfileSubmissionComponent } from './profile-submission/profile-submission.component';
+import { authGuard } from './guards/auth.guard';
 
 export const routes: Routes = [
-  { path: '', component: ProfileSubmissionComponent },
+  {
+    path: '',
+    loadComponent: () =>
+      import('./login/login.component').then((m) => m.LoginComponent),
+  },
+  {
+    path: 'profile',
+    loadComponent: () =>
+      import('./profile-submission/profile-submission.component').then(
+        (m) => m.ProfileSubmissionComponent
+      ),
+    canActivate: [authGuard],
+  },
   { path: '**', redirectTo: '' },
 ];

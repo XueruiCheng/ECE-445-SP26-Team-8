@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0a1628"/>
+      <stop offset="40%" stop-color="#132744"/>
+      <stop offset="70%" stop-color="#1a3a5c"/>
+      <stop offset="100%" stop-color="#234d72"/>
+    </linearGradient>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a3a2a"/>
+      <stop offset="100%" stop-color="#0d1f15"/>
+    </linearGradient>
+  </defs>
+  <!-- Sky -->
+  <rect width="1200" height="900" fill="url(#sky)"/>
+  <!-- Stars -->
+  <circle cx="100" cy="80" r="1.5" fill="#fff" opacity="0.7"/>
+  <circle cx="300" cy="120" r="1" fill="#fff" opacity="0.5"/>
+  <circle cx="500" cy="60" r="1.5" fill="#fff" opacity="0.6"/>
+  <circle cx="700" cy="100" r="1" fill="#fff" opacity="0.4"/>
+  <circle cx="900" cy="50" r="1.5" fill="#fff" opacity="0.7"/>
+  <circle cx="1100" cy="90" r="1" fill="#fff" opacity="0.5"/>
+  <circle cx="200" cy="200" r="1" fill="#fff" opacity="0.3"/>
+  <circle cx="600" cy="180" r="1.5" fill="#fff" opacity="0.5"/>
+  <circle cx="800" cy="220" r="1" fill="#fff" opacity="0.4"/>
+  <circle cx="1000" cy="160" r="1.5" fill="#fff" opacity="0.6"/>
+  <!-- Alma Mater / Building silhouette -->
+  <rect x="450" y="350" width="300" height="300" fill="#0f2035" rx="4"/>
+  <rect x="470" y="300" width="260" height="50" fill="#122840"/>
+  <!-- Columns -->
+  <rect x="490" y="370" width="20" height="250" fill="#1a3855" rx="2"/>
+  <rect x="540" y="370" width="20" height="250" fill="#1a3855" rx="2"/>
+  <rect x="590" y="370" width="20" height="250" fill="#1a3855" rx="2"/>
+  <rect x="640" y="370" width="20" height="250" fill="#1a3855" rx="2"/>
+  <rect x="690" y="370" width="20" height="250" fill="#1a3855" rx="2"/>
+  <!-- Pediment -->
+  <polygon points="460,300 600,240 740,300" fill="#15305a"/>
+  <!-- Dome -->
+  <ellipse cx="600" cy="250" rx="60" ry="30" fill="#1a3a65"/>
+  <!-- Windows glow -->
+  <rect x="510" y="420" width="15" height="20" fill="#3dd8c5" opacity="0.3" rx="1"/>
+  <rect x="560" y="420" width="15" height="20" fill="#3dd8c5" opacity="0.25" rx="1"/>
+  <rect x="620" y="420" width="15" height="20" fill="#3dd8c5" opacity="0.3" rx="1"/>
+  <rect x="670" y="420" width="15" height="20" fill="#3dd8c5" opacity="0.25" rx="1"/>
+  <rect x="510" y="480" width="15" height="20" fill="#3dd8c5" opacity="0.2" rx="1"/>
+  <rect x="560" y="480" width="15" height="20" fill="#3dd8c5" opacity="0.15" rx="1"/>
+  <rect x="620" y="480" width="15" height="20" fill="#3dd8c5" opacity="0.2" rx="1"/>
+  <rect x="670" y="480" width="15" height="20" fill="#3dd8c5" opacity="0.15" rx="1"/>
+  <!-- Ground -->
+  <rect x="0" y="650" width="1200" height="250" fill="url(#ground)"/>
+  <!-- Path -->
+  <polygon points="540,650 660,650 700,900 500,900" fill="#162b20" opacity="0.6"/>
+  <!-- Trees silhouettes -->
+  <ellipse cx="150" cy="580" rx="80" ry="100" fill="#0d2518"/>
+  <rect x="145" y="650" width="10" height="40" fill="#0a1d12"/>
+  <ellipse cx="1050" cy="560" rx="90" ry="110" fill="#0d2518"/>
+  <rect x="1045" y="640" width="10" height="40" fill="#0a1d12"/>
+  <ellipse cx="300" cy="600" rx="60" ry="70" fill="#102a1c"/>
+  <ellipse cx="900" cy="590" rx="70" ry="80" fill="#102a1c"/>
+  <!-- Text -->
+  <text x="600" y="820" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="600" fill="#3dd8c5" opacity="0.6">UNIVERSITY OF ILLINOIS</text>
+  <text x="600" y="855" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="16" fill="#8a9e94" opacity="0.5">URBANA-CHAMPAIGN</text>
+</svg>

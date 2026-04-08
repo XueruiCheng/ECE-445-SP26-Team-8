@@ -3,6 +3,7 @@ import {
   ElementRef,
   OnDestroy,
   afterNextRender,
+  input,
   viewChild,
 } from '@angular/core';
 
@@ -22,6 +23,7 @@ interface Particle {
   styleUrl: './quantum-header.component.less',
 })
 export class QuantumHeaderComponent implements OnDestroy {
+  readonly showTitle = input(true);
   private canvas = viewChild<ElementRef<HTMLCanvasElement>>('canvas');
   private animationId = 0;
   private particles: Particle[] = [];

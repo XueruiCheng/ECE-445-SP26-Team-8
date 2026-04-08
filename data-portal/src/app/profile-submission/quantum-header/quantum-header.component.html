@@ -1,7 +1,9 @@
 <header class="quantum-header">
   <canvas #canvas class="particle-canvas"></canvas>
-  <div class="header-content">
-    <h1 class="title">Quantum Researcher Portal</h1>
-    <p class="subtitle">Submit your researcher profile</p>
-  </div>
+  @if (showTitle()) {
+    <div class="header-content">
+      <h1 class="title">Quantum Researcher Portal</h1>
+      <p class="subtitle">Submit your researcher profile</p>
+    </div>
+  }
 </header>
