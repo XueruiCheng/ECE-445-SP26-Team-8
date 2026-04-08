@@ -1,0 +1,48 @@
+<div class="step-container">
+  <h2 class="step-title">Academic Information</h2>
+  <p class="step-description">Where do you work and what do you study?</p>
+
+  <form [formGroup]="formGroup()">
+    <div class="form-group">
+      <label for="educationLevel">Level of Education *</label>
+      <select id="educationLevel" formControlName="educationLevel">
+        <option value="" disabled>Select your level</option>
+        @for (level of educationLevels; track level) {
+          <option [value]="level">{{ level }}</option>
+        }
+      </select>
+      @if (formGroup().get('educationLevel')?.touched && formGroup().get('educationLevel')?.hasError('required')) {
+        <div class="error-message">Please select your education level.</div>
+      }
+    </div>
+
+    <div class="form-group">
+      <label for="institution">Institution *</label>
+      <input type="text" id="institution" formControlName="institution" placeholder="MIT Department of Physics">
+      @if (formGroup().get('institution')?.touched && formGroup().get('institution')?.hasError('required')) {
+        <div class="error-message">Institution is required.</div>
+      }
+    </div>
+
+    <div class="form-group">
+      <label for="role">Role *</label>
+      <input type="text" id="role" formControlName="role" placeholder="Research Associate, Professor, PhD Candidate...">
+      @if (formGroup().get('role')?.touched && formGroup().get('role')?.hasError('required')) {
+        <div class="error-message">Role is required.</div>
+      }
+    </div>
+
+    <div class="form-group">
+      <label for="fieldOfStudy">Field of Study *</label>
+      <input type="text" id="fieldOfStudy" formControlName="fieldOfStudy" placeholder="Quantum Computing, Condensed Matter Physics...">
+      @if (formGroup().get('fieldOfStudy')?.touched && formGroup().get('fieldOfStudy')?.hasError('required')) {
+        <div class="error-message">Field of study is required.</div>
+      }
+    </div>
+  </form>
+
+  <div class="step-actions">
+    <button class="btn btn-secondary" (click)="back.emit()">Back</button>
+    <button class="btn btn-primary" (click)="onNext()">Continue</button>
+  </div>
+</div>

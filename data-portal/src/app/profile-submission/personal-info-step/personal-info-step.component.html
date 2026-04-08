@@ -1,0 +1,67 @@
+<div class="step-container">
+  <h2 class="step-title">Personal Information</h2>
+  <p class="step-description">Tell us about yourself.</p>
+
+  <form [formGroup]="formGroup()">
+    <div class="form-group">
+      <label for="name">Full Name *</label>
+      <input type="text" id="name" formControlName="name" placeholder="Dr. Jane Smith">
+      @if (formGroup().get('name')?.touched && formGroup().get('name')?.hasError('required')) {
+        <div class="error-message">Name is required.</div>
+      }
+    </div>
+
+    <div class="form-group">
+      <label>Headshot *</label>
+      <div class="upload-area" (click)="fileInput.click()">
+        @if (headshotPreviewUrl()) {
+          <img [src]="headshotPreviewUrl()" alt="Headshot preview" class="headshot-preview">
+        } @else {
+          <div class="upload-placeholder">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 16V8m0 0l-3 3m3-3l3 3" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3 16.5v2a2.5 2.5 0 002.5 2.5h13a2.5 2.5 0 002.5-2.5v-2" stroke-linecap="round"/>
+            </svg>
+            <span>Click to upload a photo</span>
+            <span class="upload-hint">JPG, PNG — max 5MB</span>
+          </div>
+        }
+        <input
+          #fileInput
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          (change)="onFileSelected($event)"
+          hidden
+        >
+      </div>
+      @if (formGroup().get('headshot')?.touched && formGroup().get('headshot')?.hasError('required')) {
+        <div class="error-message">Please upload a headshot.</div>
+      }
+    </div>
+
+    <div class="form-group">
+      <label for="bio">Short Bio *</label>
+      <textarea id="bio" formControlName="bio" placeholder="A 2-3 sentence summary of your research focus and background..." rows="3"></textarea>
+      <div class="char-count" [class.over]="bioLength > 300">{{ bioLength }} / 300</div>
+      @if (formGroup().get('bio')?.touched && formGroup().get('bio')?.hasError('required')) {
+        <div class="error-message">A short bio is required.</div>
+      }
+      @if (formGroup().get('bio')?.touched && formGroup().get('bio')?.hasError('maxlength')) {
+        <div class="error-message">Bio must be 300 characters or fewer.</div>
+      }
+    </div>
+
+    <div class="form-group">
+      <label for="website">Personal Website <span class="optional">(optional)</span></label>
+      <input type="url" id="website" formControlName="website" placeholder="https://yoursite.edu">
+      @if (formGroup().get('website')?.touched && formGroup().get('website')?.hasError('invalidUrl')) {
+        <div class="error-message">Please enter a valid URL.</div>
+      }
+    </div>
+  </form>
+
+  <div class="step-actions">
+    <div></div>
+    <button class="btn btn-primary" (click)="onNext()">Continue</button>
+  </div>
+</div>

@@ -1,0 +1,67 @@
+<div class="profile-submission">
+  <app-quantum-header />
+
+  @if (submitted()) {
+    <div class="success-container">
+      <div class="success-icon">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+          <circle cx="24" cy="24" r="24" fill="url(#grad)" />
+          <path d="M15 24L21 30L33 18" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="grad" x1="0" y1="0" x2="48" y2="48">
+              <stop offset="0%" stop-color="#4f8fff"/>
+              <stop offset="100%" stop-color="#7c5cfc"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <h2 class="success-title">Profile Submitted Successfully</h2>
+      <p class="success-message">
+        Thank you, <strong>{{ profileForm.get('personal.name')?.value }}</strong>.
+        Your researcher profile has been received and will be reviewed shortly.
+      </p>
+      <button class="btn btn-secondary" (click)="resetForm()">Submit Another Profile</button>
+    </div>
+  } @else {
+    <app-step-indicator
+      [currentStep]="currentStep()"
+      (stepSelected)="goToStep($event)"
+    />
+
+    <div class="step-content" [attr.data-step]="currentStep()">
+      @switch (currentStep()) {
+        @case (1) {
+          <app-personal-info-step
+            [formGroup]="personalGroup"
+            [headshotPreviewUrl]="headshotPreviewUrl()"
+            (headshotSelected)="onHeadshotSelected($event)"
+            (next)="nextStep()"
+          />
+        }
+        @case (2) {
+          <app-academic-info-step
+            [formGroup]="academicGroup"
+            (next)="nextStep()"
+            (back)="prevStep()"
+          />
+        }
+        @case (3) {
+          <app-work-publications-step
+            [formGroup]="workGroup"
+            (next)="nextStep()"
+            (back)="prevStep()"
+          />
+        }
+        @case (4) {
+          <app-review-step
+            [formGroup]="profileForm"
+            [headshotPreviewUrl]="headshotPreviewUrl()"
+            (editStep)="goToStep($event)"
+            (back)="prevStep()"
+            (submit)="onSubmit()"
+          />
+        }
+      }
+    </div>
+  }
+</div>

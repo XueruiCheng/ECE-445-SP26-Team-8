@@ -1,0 +1,30 @@
+<nav class="step-indicator" [attr.aria-label]="'Form progress'">
+  @for (step of steps(); track step) {
+    <div class="step-group">
+      <button
+        class="step-circle"
+        [class.completed]="step < currentStep()"
+        [class.active]="step === currentStep()"
+        [class.clickable]="step < currentStep()"
+        [disabled]="step >= currentStep()"
+        (click)="onStepClick(step)"
+        [attr.aria-label]="stepLabels()[step - 1]"
+        [attr.aria-current]="step === currentStep() ? 'step' : null"
+      >
+        @if (step < currentStep()) {
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M2.5 7L5.5 10L11.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        } @else {
+          {{ step }}
+        }
+      </button>
+      <span class="step-label" [class.active]="step === currentStep()" [class.completed]="step < currentStep()">
+        {{ stepLabels()[step - 1] }}
+      </span>
+    </div>
+    @if (step < totalSteps()) {
+      <div class="step-connector" [class.completed]="step < currentStep()"></div>
+    }
+  }
+</nav>

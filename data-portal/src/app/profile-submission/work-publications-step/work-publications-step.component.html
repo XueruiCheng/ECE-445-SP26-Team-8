@@ -1,0 +1,34 @@
+<div class="step-container">
+  <h2 class="step-title">Work & Publications</h2>
+  <p class="step-description">Share your research contributions and any additional details.</p>
+
+  <form [formGroup]="formGroup()">
+    <div class="form-group">
+      <label for="publications">Publications or Notable Work *</label>
+      <textarea
+        id="publications"
+        formControlName="publications"
+        placeholder="List your key publications, papers, or notable research work. You can include links."
+        rows="5"
+      ></textarea>
+      @if (formGroup().get('publications')?.touched && formGroup().get('publications')?.hasError('required')) {
+        <div class="error-message">Please provide at least one publication or notable work.</div>
+      }
+    </div>
+
+    <div class="form-group">
+      <label for="additionalInfo">Additional Information <span class="optional">(optional)</span></label>
+      <textarea
+        id="additionalInfo"
+        formControlName="additionalInfo"
+        placeholder="Anything else you'd like to share — awards, collaborations, research interests..."
+        rows="4"
+      ></textarea>
+    </div>
+  </form>
+
+  <div class="step-actions">
+    <button class="btn btn-secondary" (click)="back.emit()">Back</button>
+    <button class="btn btn-primary" (click)="onNext()">Review Submission</button>
+  </div>
+</div>

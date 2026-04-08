@@ -1,0 +1,88 @@
+<div class="step-container">
+  <h2 class="step-title">Review Your Submission</h2>
+  <p class="step-description">Please verify your information before submitting.</p>
+
+  <!-- Personal Info -->
+  <section class="review-section">
+    <div class="section-header">
+      <h3>Personal Information</h3>
+      <button class="btn btn-ghost" (click)="editStep.emit(1)">Edit</button>
+    </div>
+    <div class="review-card">
+      <div class="profile-row">
+        @if (headshotPreviewUrl()) {
+          <img [src]="headshotPreviewUrl()" alt="Headshot" class="review-headshot">
+        }
+        <div class="profile-details">
+          <div class="review-field">
+            <span class="field-label">Name</span>
+            <span class="field-value">{{ personal?.name }}</span>
+          </div>
+          <div class="review-field">
+            <span class="field-label">Bio</span>
+            <span class="field-value bio">{{ personal?.bio }}</span>
+          </div>
+          @if (personal?.website) {
+            <div class="review-field">
+              <span class="field-label">Website</span>
+              <span class="field-value">{{ personal?.website }}</span>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Academic Info -->
+  <section class="review-section">
+    <div class="section-header">
+      <h3>Academic Information</h3>
+      <button class="btn btn-ghost" (click)="editStep.emit(2)">Edit</button>
+    </div>
+    <div class="review-card">
+      <div class="review-grid">
+        <div class="review-field">
+          <span class="field-label">Education Level</span>
+          <span class="field-value">{{ academic?.educationLevel }}</span>
+        </div>
+        <div class="review-field">
+          <span class="field-label">Institution</span>
+          <span class="field-value">{{ academic?.institution }}</span>
+        </div>
+        <div class="review-field">
+          <span class="field-label">Role</span>
+          <span class="field-value">{{ academic?.role }}</span>
+        </div>
+        <div class="review-field">
+          <span class="field-label">Field of Study</span>
+          <span class="field-value">{{ academic?.fieldOfStudy }}</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Work & Publications -->
+  <section class="review-section">
+    <div class="section-header">
+      <h3>Work & Publications</h3>
+      <button class="btn btn-ghost" (click)="editStep.emit(3)">Edit</button>
+    </div>
+    <div class="review-card">
+      <div class="review-field">
+        <span class="field-label">Publications / Notable Work</span>
+        <span class="field-value pre-wrap">{{ work?.publications }}</span>
+      </div>
+      @if (work?.additionalInfo) {
+        <div class="review-field">
+          <span class="field-label">Additional Information</span>
+          <span class="field-value pre-wrap">{{ work?.additionalInfo }}</span>
+        </div>
+      }
+    </div>
+  </section>
+
+  <div class="step-actions">
+    <button class="btn btn-secondary" (click)="back.emit()">Back</button>
+    <button class="btn btn-primary" (click)="submit.emit()">Submit Profile</button>
+  </div>
+</div>
