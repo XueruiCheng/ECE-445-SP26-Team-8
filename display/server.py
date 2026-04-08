@@ -7,6 +7,7 @@ app = FastAPI(title="Quantum Mirror")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+    "http://localhost:4200",
     "http://localhost:5000",
     "http://127.0.0.1:5000",
     "http://localhost:8000",
@@ -16,8 +17,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory="display/frontend"), name="static")
+# Serve scientist images from the dataset
+app.mount("/images", StaticFiles(directory="model/data/raw_images"), name="images")
+
+# Serve Angular build output
+app.mount("/static", StaticFiles(directory="display/frontend/dist/frontend/browser"), name="static")
 
 @app.get("/")
 async def root():
-    return FileResponse("display/frontend/index.html")
+    return FileResponse("display/frontend/dist/frontend/browser/index.html")
+
+# SPA catch-all: serve index.html for any non-API, non-static route
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    return FileResponse("display/frontend/dist/frontend/browser/index.html")
