@@ -4,3 +4,6 @@ venv/
 .vscode/
 model/data/
 .DS_Store
+
+# Claude
+.claude/

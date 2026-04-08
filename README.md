@@ -3,6 +3,17 @@
 An interactive display that uses a two-way mirror and facial recognition to match a user's face with a well-known figure from a selected category (scientists, engineers, or entrepreneurs). When a user steps up and activates the system, a webcam captures their face, computes a facial embedding, finds the closest visual match from a precomputed database, and displays the result on a monitor behind the mirror.
 
 
+## Branches
+
+Currently there are two branches: 
+- main
+- raspberry_pi
+
+Both branches hold the base groundwork of CV in the /model folder but they differ in that the main branch will be used to hold the code for the data-portal web app
+that will be used to collect and extract viable headshots and informational data on our real dataset that we intend to use, whereas the raspberry_pi branch changes the base 
+code and has its own configurations to be able to successfully display a kiosk-type "server" when our raspberry pi and monitor are hooked into this codebase.
+
+
 ## Running the Pipeline
 
 
