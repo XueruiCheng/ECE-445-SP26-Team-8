@@ -25,6 +25,26 @@ python main.py
 - Press `ESC` at any point to cancel
 
 
+## Raspberry Pi
+
+Once you have connected your Raspberry Pi to your monitor and hooked up a keyboard through the USB-port, try running this command to see
+if an instance of chromium will pop up. Make sure that you have configured wifi properly and you have installed all the necessary dependencies:
+
+```bash
+sudo apt update
+sudo apt install xorg chromium
+```
+
+Command to run your server
+```bash
+uvicorn display.server:app --host 0.0.0.0 --port 8000
+```
+
+Command to connect your raspberry pi to your local hosted server
+```bash
+xinit /bin/bash -c "chromium-browser --kiosk http://localhost:8000" -- :0
+```
+
 ## Hardware
 
 - Raspberry Pi 4 Model B (4GB RAM) — runs the backend pipeline
