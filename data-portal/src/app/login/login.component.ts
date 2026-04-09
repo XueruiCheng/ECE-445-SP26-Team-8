@@ -19,6 +19,10 @@ export class LoginComponent {
     });
   }
 
+  signInWithGoogle(): void {
+    this.supabase.signInWithGoogle();
+  }
+
   signInWithMicrosoft(): void {
     this.supabase.signInWithMicrosoft();
   }

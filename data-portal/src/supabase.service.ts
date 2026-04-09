@@ -32,6 +32,13 @@ export class SupabaseService {
     return this.supabase.auth.getSession();
   }
 
+  async signInWithGoogle(): Promise<void> {
+    await this.supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    });
+  }
+
   async signInWithMicrosoft(): Promise<void> {
     await this.supabase.auth.signInWithOAuth({
       provider: 'azure',
