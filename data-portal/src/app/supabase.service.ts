@@ -1,6 +1,7 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { createClient, SupabaseClient, Session } from '@supabase/supabase-js';
 import { environment } from '../environment';
+import { Profile } from './profile-submission/profile-submission.component';
 
 @Injectable({
   providedIn: 'root',
@@ -55,5 +56,75 @@ export class SupabaseService {
 
   getTodos() {
     return this.supabase.from('todos').select('*');
+  }
+
+  async upsertProfile(profile : Profile): Promise<void> {
+    const { data, error } = await this.supabase
+      .from('profiles')
+      .upsert(profile, { onConflict : 'id'})
+
+    if (error) {
+      throw error;
+    }
+  }
+
+  async getUser() {
+    const { data : { user } } = await this.supabase.auth.getUser();
+
+    if (!user) {
+      throw new Error('No authenticated user');
+    }
+
+    return user;
+  }
+
+  async uploadHeadshot(userId: string, file: File): Promise<string> {
+    const filePath = `${userId}/headshot.${file.name.split('.').pop()}`;
+    const { error } = await this.supabase.storage
+      .from('headshots')
+      .upload(filePath, file, { upsert: true });
+
+    if (error) {
+      throw error;
+    }
+
+    return filePath;
+  }
+
+  async uploadBioVideo(userId: string, file: File): Promise<string> {
+    const filePath = `${userId}/bio_video.mp4`;
+    const { error } = await this.supabase.storage
+      .from('bio_videos')
+      .upload(filePath, file, { upsert: true });
+
+    if (error) {
+      throw error;
+    }
+
+    return filePath;
+  }
+
+  async getHeadshotSignedUrl(path: string): Promise<string> {
+    const { data, error } = await this.supabase.storage
+      .from('headshots')
+      .createSignedUrl(path, 3600);
+
+    if (error) {
+      throw error;
+    }
+
+    return data.signedUrl;
+  }
+
+  async getBioVideoSignedUrl(path: string): Promise<string> {
+    const { data, error } = await this.supabase.storage
+      .from('bio_videos')
+      .createSignedUrl(path, 3600);
+
+    if (error) {
+      throw error;
+    }
+
+    return data.signedUrl;
   }
 }

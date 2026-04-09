@@ -28,6 +28,16 @@
   margin: 0 auto;
 }
 
+.loading-spinner {
+  margin-bottom: 24px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .success-icon {
   margin-bottom: 24px;
   animation: scaleIn 400ms ease;

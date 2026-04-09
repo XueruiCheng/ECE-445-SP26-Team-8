@@ -1,7 +1,24 @@
 <div class="profile-submission">
   <app-quantum-header />
 
-  @if (submitted()) {
+  @if (submitting() && !submitted()) {
+    <div class="success-container">
+      <div class="loading-spinner">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+          <circle cx="24" cy="24" r="20" stroke="rgba(79, 143, 255, 0.2)" stroke-width="4" fill="none"/>
+          <path d="M44 24a20 20 0 0 0-20-20" stroke="url(#spinner-grad)" stroke-width="4" stroke-linecap="round" fill="none"/>
+          <defs>
+            <linearGradient id="spinner-grad" x1="0" y1="0" x2="48" y2="48">
+              <stop offset="0%" stop-color="#4f8fff"/>
+              <stop offset="100%" stop-color="#7c5cfc"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <h2 class="success-title">Submitting Your Profile</h2>
+      <p class="success-message">Uploading your files and saving your information...</p>
+    </div>
+  } @else if (submitted()) {
     <div class="success-container">
       <div class="success-icon">
         <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
@@ -18,9 +35,8 @@
       <h2 class="success-title">Profile Submitted Successfully</h2>
       <p class="success-message">
         Thank you, <strong>{{ profileForm.get('personal.name')?.value }}</strong>.
-        Your researcher profile has been received and will be reviewed shortly.
       </p>
-      <button class="btn btn-secondary" (click)="resetForm()">Submit Another Profile</button>
+      <button class="btn btn-secondary" (click)="resetForm()">Redo Submission</button>
     </div>
   } @else {
     <app-step-indicator
