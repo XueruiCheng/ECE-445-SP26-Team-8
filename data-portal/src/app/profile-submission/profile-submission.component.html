@@ -34,7 +34,9 @@
           <app-personal-info-step
             [formGroup]="personalGroup"
             [headshotPreviewUrl]="headshotPreviewUrl()"
+            [videoPreviewUrl]="videoPreviewUrl()"
             (headshotSelected)="onHeadshotSelected($event)"
+            (videoSelected)="onVideoSelected($event)"
             (next)="nextStep()"
           />
         }

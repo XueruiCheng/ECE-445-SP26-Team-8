@@ -25,6 +25,7 @@ export class ProfileSubmissionComponent implements OnDestroy {
   currentStep = signal(1);
   submitted = signal(false);
   headshotPreviewUrl = signal<string | null>(null);
+  videoPreviewUrl = signal<string | null>(null);
 
   profileForm = new FormGroup({
     personal: new FormGroup({
@@ -35,6 +36,7 @@ export class ProfileSubmissionComponent implements OnDestroy {
         validators: [Validators.required, Validators.maxLength(300)],
       }),
       website: new FormControl('', { nonNullable: true, validators: [optionalUrlValidator] }),
+      video: new FormControl<File | null>(null, { validators: [Validators.required] }),
     }),
     academic: new FormGroup({
       educationLevel: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
@@ -65,6 +67,10 @@ export class ProfileSubmissionComponent implements OnDestroy {
     if (url) {
       URL.revokeObjectURL(url);
     }
+    const videoUrl = this.videoPreviewUrl();
+    if (videoUrl) {
+      URL.revokeObjectURL(videoUrl);
+    }
   }
 
   onHeadshotSelected(file: File): void {
@@ -75,6 +81,16 @@ export class ProfileSubmissionComponent implements OnDestroy {
     this.headshotPreviewUrl.set(URL.createObjectURL(file));
     this.profileForm.get('personal.headshot')?.setValue(file);
     this.profileForm.get('personal.headshot')?.markAsTouched();
+  }
+
+  onVideoSelected(file: File): void {
+    const prevUrl = this.videoPreviewUrl();
+    if (prevUrl) {
+      URL.revokeObjectURL(prevUrl);
+    }
+    this.videoPreviewUrl.set(URL.createObjectURL(file));
+    this.profileForm.get('personal.video')?.setValue(file);
+    this.profileForm.get('personal.video')?.markAsTouched();
   }
 
   goToStep(step: number): void {
@@ -102,6 +118,9 @@ export class ProfileSubmissionComponent implements OnDestroy {
     const url = this.headshotPreviewUrl();
     if (url) URL.revokeObjectURL(url);
     this.headshotPreviewUrl.set(null);
+    const videoUrl = this.videoPreviewUrl();
+    if (videoUrl) URL.revokeObjectURL(videoUrl);
+    this.videoPreviewUrl.set(null);
     this.submitted.set(false);
     this.currentStep.set(1);
   }

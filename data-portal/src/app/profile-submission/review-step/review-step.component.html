@@ -1,7 +1,6 @@
 <div class="step-container">
   <h2 class="step-title">Review Your Submission</h2>
-  <p class="step-description">Please verify your information before submitting.</p>
-
+  
   <!-- Personal Info -->
   <section class="review-section">
     <div class="section-header">
@@ -22,6 +21,12 @@
             <span class="field-label">Bio</span>
             <span class="field-value bio">{{ personal?.bio }}</span>
           </div>
+          @if (personal?.video) {
+            <div class="review-field">
+              <span class="field-label">Video Introduction</span>
+              <span class="field-value">{{ personal?.video?.name }}</span>
+            </div>
+          }
           @if (personal?.website) {
             <div class="review-field">
               <span class="field-label">Website</span>

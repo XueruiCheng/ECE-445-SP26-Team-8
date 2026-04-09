@@ -10,8 +10,10 @@ import { ReactiveFormsModule, FormGroup } from '@angular/forms';
 export class PersonalInfoStepComponent {
   formGroup = input.required<FormGroup>();
   headshotPreviewUrl = input<string | null>(null);
+  videoPreviewUrl = input<string | null>(null);
 
   headshotSelected = output<File>();
+  videoSelected = output<File>();
   next = output<void>();
 
   onFileSelected(event: Event): void {
@@ -19,6 +21,14 @@ export class PersonalInfoStepComponent {
     const file = input.files?.[0];
     if (file) {
       this.headshotSelected.emit(file);
+    }
+  }
+
+  onVideoSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file) {
+      this.videoSelected.emit(file);
     }
   }
 

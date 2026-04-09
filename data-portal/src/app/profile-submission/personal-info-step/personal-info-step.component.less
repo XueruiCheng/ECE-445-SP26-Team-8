@@ -55,11 +55,18 @@
 }
 
 .headshot-preview {
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 3px solid var(--border-subtle);
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: var(--radius-md);
+  object-fit: contain;
+  border: 2px solid var(--border-subtle);
+}
+
+.video-preview {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--border-subtle);
 }
 
 .char-count {
