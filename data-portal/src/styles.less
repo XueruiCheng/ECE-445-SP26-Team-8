@@ -1,16 +1,16 @@
 :root {
-  --navy-primary: #080e0e;
-  --navy-secondary: #0d1717;
-  --navy-surface: #111e1e;
-  --navy-surface-hover: #162828;
-  --accent-blue: #3dd8c5;
-  --accent-violet: #a8d84f;
+  --navy-primary: #0a1628;
+  --navy-secondary: #0e1e35;
+  --navy-surface: #13294B;
+  --navy-surface-hover: #1a3560;
+  --accent-blue: #E84A27;
+  --accent-violet: #FF6F42;
   --accent-gradient: linear-gradient(135deg, var(--accent-blue), var(--accent-violet));
-  --text-primary: #e4efe8;
-  --text-secondary: #8a9e94;
-  --text-muted: #546b60;
-  --border-subtle: rgba(61, 216, 197, 0.12);
-  --border-focus: rgba(61, 216, 197, 0.4);
+  --text-primary: #e8ecf0;
+  --text-secondary: #b0b8c8;
+  --text-muted: #7a889e;
+  --border-subtle: rgba(232, 74, 39, 0.15);
+  --border-focus: rgba(232, 74, 39, 0.45);
   --error: #f87171;
   --success: #34d399;
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
@@ -29,11 +29,12 @@
 html {
   font-size: 16px;
   height: 100%;
+  background-color: #080e1a;
 }
 
 body {
   font-family: var(--font-sans);
-  background: radial-gradient(ellipse at 50% 30%, #0f1f1a 0%, #080e0e 50%, #0a0d08 100%);
+  background: radial-gradient(ellipse at 50% 30%, #111f3a 0%, #0a1628 50%, #080e1a 100%);
   color: var(--text-primary);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -66,7 +67,7 @@ textarea {
 
   &:focus {
     border-color: var(--border-focus);
-    box-shadow: 0 0 0 3px rgba(61, 216, 197, 0.1);
+    box-shadow: 0 0 0 3px rgba(232, 74, 39, 0.1);
   }
 
   &.ng-touched.ng-invalid {
@@ -129,10 +130,10 @@ label {
 .btn-primary {
   background: var(--accent-gradient);
   color: #fff;
-  box-shadow: 0 2px 12px rgba(61, 216, 197, 0.25);
+  box-shadow: 0 2px 12px rgba(232, 74, 39, 0.25);
 
   &:hover:not(:disabled) {
-    box-shadow: 0 4px 20px rgba(61, 216, 197, 0.4);
+    box-shadow: 0 4px 20px rgba(232, 74, 39, 0.4);
     transform: translateY(-1px);
   }
 }
@@ -145,7 +146,7 @@ label {
   &:hover:not(:disabled) {
     color: var(--text-primary);
     border-color: var(--border-focus);
-    background: rgba(61, 216, 197, 0.05);
+    background: rgba(232, 74, 39, 0.05);
   }
 }
 
@@ -156,7 +157,7 @@ label {
   font-size: 0.85rem;
 
   &:hover {
-    background: rgba(61, 216, 197, 0.08);
+    background: rgba(232, 74, 39, 0.08);
   }
 }
 

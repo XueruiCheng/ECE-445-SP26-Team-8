@@ -56,10 +56,10 @@ export class QuantumHeaderComponent implements OnDestroy {
     window.addEventListener('resize', resize);
 
     const colors = [
-      'rgba(61, 216, 197, 0.35)',
-      'rgba(80, 200, 140, 0.3)',
-      'rgba(168, 216, 79, 0.25)',
-      'rgba(61, 216, 197, 0.15)',
+      'rgba(232, 74, 39, 0.35)',
+      'rgba(255, 111, 66, 0.3)',
+      'rgba(19, 41, 75, 0.3)',
+      'rgba(232, 74, 39, 0.15)',
     ];
 
     for (let i = 0; i < 45; i++) {
@@ -111,7 +111,7 @@ export class QuantumHeaderComponent implements OnDestroy {
         if (dist < connectionDistance) {
           const alpha = (1 - dist / connectionDistance) * 0.15;
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(61, 216, 197, ${alpha})`;
+          ctx.strokeStyle = `rgba(232, 74, 39, ${alpha})`;
           ctx.lineWidth = 0.5;
           ctx.moveTo(this.particles[i].x, this.particles[i].y);
           ctx.lineTo(this.particles[j].x, this.particles[j].y);

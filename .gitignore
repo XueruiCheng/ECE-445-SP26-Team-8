@@ -4,6 +4,7 @@ venv/
 .vscode/
 model/data/
 .DS_Store
+todo.txt
 
 # Claude
 .claude/

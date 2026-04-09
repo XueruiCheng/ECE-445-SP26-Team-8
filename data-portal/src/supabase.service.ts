@@ -32,17 +32,13 @@ export class SupabaseService {
     return this.supabase.auth.getSession();
   }
 
-  async signInWithGoogle(): Promise<void> {
-    await this.supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin + '/profile' },
-    });
-  }
-
   async signInWithMicrosoft(): Promise<void> {
     await this.supabase.auth.signInWithOAuth({
       provider: 'azure',
-      options: { redirectTo: window.location.origin + '/profile' },
+      options: { 
+        scopes: 'email profile',
+        redirectTo: window.location.origin 
+      },
     });
   }
 
