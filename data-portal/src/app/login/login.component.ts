@@ -1,6 +1,7 @@
 import { Component, effect, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { SupabaseService } from '../../supabase.service';
+import { SupabaseService } from '../supabase.service';
+
 @Component({
   selector: 'app-login',
   standalone: true,

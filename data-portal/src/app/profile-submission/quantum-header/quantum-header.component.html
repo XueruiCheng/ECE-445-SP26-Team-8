@@ -1,5 +1,20 @@
 <header class="quantum-header">
   <canvas #canvas class="particle-canvas"></canvas>
+
+  @if (supabase.isAuthenticated()) {
+    <div class="profile-menu">
+      <button class="profile-btn" (click)="toggleDropdown()">
+        <img src="profile.png" alt="Profile" class="profile-icon" />
+      </button>
+      @if (dropdownOpen()) {
+        <div class="profile-dropdown">
+          <div class="dropdown-email">{{ supabase.user()?.email }}</div>
+          <button class="dropdown-signout" (click)="signOut()">Sign Out</button>
+        </div>
+      }
+    </div>
+  }
+
   @if (showTitle()) {
     <div class="header-content">
       <h1 class="title">Quantum Researcher Portal</h1>

@@ -1,4 +1,4 @@
-import { Component, OnDestroy, signal } from '@angular/core';
+import { Component, OnDestroy, signal, inject } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { optionalUrlValidator } from './url.validator';
 import { QuantumHeaderComponent } from './quantum-header/quantum-header.component';
@@ -7,6 +7,7 @@ import { PersonalInfoStepComponent } from './personal-info-step/personal-info-st
 import { AcademicInfoStepComponent } from './academic-info-step/academic-info-step.component';
 import { WorkPublicationsStepComponent } from './work-publications-step/work-publications-step.component';
 import { ReviewStepComponent } from './review-step/review-step.component';
+import { SupabaseService } from '../supabase.service'; 
 
 @Component({
   selector: 'app-profile-submission',
@@ -26,6 +27,8 @@ export class ProfileSubmissionComponent implements OnDestroy {
   submitted = signal(false);
   headshotPreviewUrl = signal<string | null>(null);
   videoPreviewUrl = signal<string | null>(null);
+
+  private supabase = inject(SupabaseService);
 
   profileForm = new FormGroup({
     personal: new FormGroup({
@@ -109,6 +112,7 @@ export class ProfileSubmissionComponent implements OnDestroy {
   onSubmit(): void {
     if (this.profileForm.valid) {
       this.submitted.set(true);
+      // call supabase insert function
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }

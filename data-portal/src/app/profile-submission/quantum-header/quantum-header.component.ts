@@ -3,9 +3,13 @@ import {
   ElementRef,
   OnDestroy,
   afterNextRender,
+  inject,
   input,
+  signal,
   viewChild,
 } from '@angular/core';
+import { Router } from '@angular/router';
+import { SupabaseService } from '../../supabase.service';
 
 interface Particle {
   x: number;
@@ -25,6 +29,20 @@ interface Particle {
 export class QuantumHeaderComponent implements OnDestroy {
   readonly showTitle = input(true);
   private canvas = viewChild<ElementRef<HTMLCanvasElement>>('canvas');
+
+  protected readonly supabase = inject(SupabaseService);
+  private readonly router = inject(Router);
+  protected dropdownOpen = signal(false);
+
+  toggleDropdown(): void {
+    this.dropdownOpen.update(v => !v);
+  }
+
+  async signOut(): Promise<void> {
+    await this.supabase.signOut();
+    this.dropdownOpen.set(false);
+    this.router.navigate(['/login']);
+  }
   private animationId = 0;
   private particles: Particle[] = [];
   private resizeHandler: (() => void) | null = null;
