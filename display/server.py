@@ -13,6 +13,9 @@ from contextlib import asynccontextmanager
 import cv2
 import numpy as np
 import insightface
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 
 # globals
 WARMUP_FRAMES = 60
@@ -61,6 +64,9 @@ async def websocket_camera(websocket : WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         active_websocket = None
+
+def detect_right_hand_rule():
+
 
 
 def camera_loop():
