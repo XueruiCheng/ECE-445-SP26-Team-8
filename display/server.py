@@ -2,9 +2,13 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from face_match import find_top_matches
 
 import os
 import queue
+import asyncio
+import threading
+from contextlib import asynccontextmanager
 
 import cv2
 import numpy as np
@@ -15,12 +19,21 @@ WARMUP_FRAMES = 60
 MIN_DET_SCORE = 0.7
 FRAMES_TO_COLLECT = 6
 INFERENCE_EVERY_N_FRAMES = 3
+LOGITECH_RASP_CAMERA_IDX = '/dev/video0'
+LOCAL_CAMERA_IDX = '0'
 
 DIST_DIR = "display/frontend/dist/frontend/browser"
 
 # list of events to send to our frontend
 event_queue : queue.Queue = queue.Queue()
 active_websocket = WebSocket | None = None
+
+# main thread
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    threading.Thread(target=camera_loop, daemon=True).start()
+    asyncio.create_task(broadcast_event())
+    yield
 
 
 app = FastAPI(title="Quantum Mirror")
@@ -37,25 +50,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve scientist images from the dataset
-app.mount("/images", StaticFiles(directory="model/data/raw_images"), name="images")
-
-# Serve media files (fonts, etc.)
-app.mount("/media", StaticFiles(directory=f"{DIST_DIR}/media"), name="media")
-
-@app.get("/")
-async def root():
-    return FileResponse(f"{DIST_DIR}/index.html")
-
-@app.get("/{full_path:path}")
-async def serve_spa(full_path: str):
-    # Serve actual files (JS, CSS, etc.) if they exist
-    file_path = os.path.join(DIST_DIR, full_path)
-    if os.path.isfile(file_path):
-        return FileResponse(file_path)
-    # Otherwise serve index.html for SPA routing
-    return FileResponse(f"{DIST_DIR}/index.html")
-
 # maybe add unique identifier into 
 @app.websocket("/ws/camera")
 async def websocket_camera(websocket : WebSocket):
@@ -64,17 +58,14 @@ async def websocket_camera(websocket : WebSocket):
     active_websocket = websocket
     try:
         while True:
-            data = await websocket.receive_bytes()
-            if data:
-                # do somethiing with the data from websocket
-                continue
-            # add to the queue
+            await websocket.receive_text()
     except WebSocketDisconnect:
         active_websocket = None
-        raise ConnectionError()
+
 
 def camera_loop():
-    cap = cv2.VideoCapture('/dev/video0')
+    # switch this based on what camera you are using
+    cap = cv2.VideoCapture(LOCAL_CAMERA_IDX)
     if not cap.isOpened():
         raise RuntimeError("Could not open webcam")
 
@@ -82,10 +73,19 @@ def camera_loop():
     face_model.prepare(ctx_id=0, det_size=(320, 320))
 
     collected_embeddings = []
+    frame_count = 0
 
     while True:
         ret, frame = cap.read()
         if not ret:
+            continue
+
+        frame_count += 1
+        if frame_count % 3 == 0:
+            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
+            event_queue.put(buffer.tobytes())
+        
+        if frame_count % INFERENCE_EVERY_N_FRAMES != 0:
             continue
 
         faces = face_model.get(frame)
@@ -99,6 +99,7 @@ def camera_loop():
             continue
 
         face = faces[0]
+        # should we do something if these conditiosn aren't met?
         if face.det_score > MIN_DET_SCORE and face.embedding is not None:
             collected_embeddings.append(face.embedding)
 
@@ -119,16 +120,41 @@ def camera_loop():
                     "type": "match_result",
                     "matches": matches
                 })
-                collected_embeddings = [] 
+                collected_embeddings = []
 
-def find_top_matches(live_embedding, db_embeddings, db_names, n=3):
-    """
-    Find the top-N most similar faces in the database to the live embedding
-    """
-    live_norm = live_embedding / (np.linalg.norm(live_embedding) + 1e-10)
-    db_norms = db_embeddings / (np.linalg.norm(db_embeddings, axis=1, keepdims=True) + 1e-10)
+async def broadcast_event():
+    while True:
+        try:
+            event = event_queue.get_nowait()
+            if active_websocket:
+                if isinstance(event, bytes):
+                    await active_websocket.send_bytes(event)
+                else:
+                    await active_websocket.send_json(event)
+        except queue.Empty:
+            pass
+        await asyncio.sleep(0.01)
 
-    scores = db_norms @ live_norm
-    top_indices = np.argsort(scores)[::-1][:n]
 
-    return [(db_names[i], float(scores[i])) for i in top_indices]
+#------------------------------------#
+#-----------Legacy Functions---------#
+#------------------------------------#
+
+# Serve scientist images from the dataset
+app.mount("/images", StaticFiles(directory="model/data/raw_images"), name="images")
+
+# Serve media files (fonts, etc.)
+app.mount("/media", StaticFiles(directory=f"{DIST_DIR}/media"), name="media")
+
+@app.get("/")
+async def root():
+    return FileResponse(f"{DIST_DIR}/index.html")
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    # Serve actual files (JS, CSS, etc.) if they exist
+    file_path = os.path.join(DIST_DIR, full_path)
+    if os.path.isfile(file_path):
+        return FileResponse(file_path)
+    # Otherwise serve index.html for SPA routing
+    return FileResponse(f"{DIST_DIR}/index.html")
