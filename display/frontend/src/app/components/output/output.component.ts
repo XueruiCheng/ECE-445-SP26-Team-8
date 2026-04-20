@@ -1,6 +1,7 @@
 import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { AsyncPipe } from '@angular/common';
 import { MirrorStateService } from '../../services/mirror-state.service';
+import { apiUrl } from '../../services/websocket.service';
 
 @Component({
   selector: 'app-output',
@@ -13,7 +14,7 @@ import { MirrorStateService } from '../../services/mirror-state.service';
         <div class="result-container">
           <div class="image-panel fade-in">
             <div class="image-frame">
-              <img [src]="result.image_url" [alt]="result.name" />
+              <img [src]="resolveUrl(result.image_url)" [alt]="result.name" />
             </div>
             <div class="match-badge">
               <span class="match-pct">{{ (result.similarity * 100).toFixed(0) }}%</span>
@@ -48,4 +49,5 @@ import { MirrorStateService } from '../../services/mirror-state.service';
 })
 export class OutputComponent {
   mirrorState = inject(MirrorStateService);
+  resolveUrl = apiUrl;
 }

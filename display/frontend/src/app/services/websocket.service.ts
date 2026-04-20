@@ -85,11 +85,23 @@ export class WebSocketService implements OnDestroy {
 
   private buildUrl(): string {
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    // Angular dev server runs on :4200, but the FastAPI WS lives on :8000.
-    const host =
-      window.location.host === 'localhost:4200' || window.location.host === '127.0.0.1:4200'
-        ? 'localhost:8000'
-        : window.location.host;
-    return `${proto}://${host}/ws/camera`;
+    return `${proto}://${apiHost()}/ws/camera`;
   }
+}
+
+/** Resolve a backend-relative URL (e.g. "/images/Foo.jpg") to an absolute URL.
+ * In dev, the page is on :4200 but FastAPI serves images on :8000, so we
+ * always prefix with the API host. */
+export function apiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `${proto}://${apiHost()}${normalized}`;
+}
+
+function apiHost(): string {
+  // Angular dev server runs on :4200, but the FastAPI server lives on :8000.
+  return window.location.host === 'localhost:4200' || window.location.host === '127.0.0.1:4200'
+    ? 'localhost:8000'
+    : window.location.host;
 }
