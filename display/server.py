@@ -26,7 +26,7 @@ MIN_DET_SCORE = 0.7
 FRAMES_TO_COLLECT = 6
 INFERENCE_EVERY_N_FRAMES = 3
 LOGITECH_RASP_CAMERA_IDX = '/dev/video0'
-LOCAL_CAMERA_IDX = 0
+LOCAL_CAMERA_IDX = 1
 
 FRAME_WIDTH = 1280
 FRAME_HEIGHT = 720
@@ -140,7 +140,7 @@ def load_face_database() -> tuple[np.ndarray, list[str], dict]:
 
 def camera_loop():
     # switch this with raspberry pi camera index when testing through raspberry pi
-    cap = cv2.VideoCapture(LOCAL_CAMERA_IDX)
+    cap = cv2.VideoCapture(LOCAL_CAMERA_IDX, cv2.CAP_V4L2)
     # MJPG lets USB 2.0 cams actually hit 30fps at 720p; YUYV is bandwidth-capped to ~5fps.
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)

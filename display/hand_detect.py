@@ -12,7 +12,7 @@ from mediapipe.tasks.python import vision
 # -----------------------------
 # Config
 # -----------------------------
-CAMERA_ID = 0
+CAMERA_ID = 1
 WIDTH = 1280
 HEIGHT = 720
 
@@ -352,9 +352,11 @@ class HandGameDetector:
 # Standalone entry (for solo testing)
 # -----------------------------
 def main():
-    cap = cv2.VideoCapture(CAMERA_ID)
+    cap = cv2.VideoCapture(CAMERA_ID, cv2.CAP_V4L2)
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+    cap.set(cv2.CAP_PROP_FPS, 30)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     if not cap.isOpened():
