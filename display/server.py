@@ -20,9 +20,7 @@ import cv2
 import numpy as np
 import insightface
 
-# --------------------------------------------------------------------------- #
-# Config                                                                      #
-# --------------------------------------------------------------------------- #
+# config globals
 WARMUP_FRAMES = 60
 MIN_DET_SCORE = 0.7
 FRAMES_TO_COLLECT = 6
@@ -33,8 +31,6 @@ LOCAL_CAMERA_IDX = 0
 FRAME_WIDTH = 1280
 FRAME_HEIGHT = 720
 
-# Anchor all paths to the repo root (parent of display/) so the server can be
-# launched from any working directory.
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DIST_DIR = REPO_ROOT / "display" / "frontend" / "dist" / "frontend" / "browser"
 RAW_IMAGES_DIR = REPO_ROOT / "model" / "data" / "raw_images"
@@ -44,25 +40,17 @@ DB_EMBEDDINGS_PATH = DB_DIR / "embeddings.npy"
 DB_NAMES_PATH = DB_DIR / "names.json"
 DB_PROFILES_PATH = DB_DIR / "profiles.json"
 
-# --------------------------------------------------------------------------- #
-# Shared state                                                                #
-# --------------------------------------------------------------------------- #
 event_queue: queue.Queue = queue.Queue()
 active_websocket: WebSocket | None = None
 
 # Mutated only by the WebSocket handler (single writer); read by camera_loop.
 current_state: str = "idle"
 
-# Detectors are instantiated at lifespan startup. camera_loop is the only
-# thread that ever calls process_frame() on these.
 thumbs_detector: ThumbsUpDetector | None = None
 hand_detector: HandGameDetector | None = None
 face_collector = None  # type: FaceCollector | None
 
 
-# --------------------------------------------------------------------------- #
-# Face matching                                                               #
-# --------------------------------------------------------------------------- #
 class FaceCollector:
     """Collects FRAMES_TO_COLLECT face embeddings, averages them, and emits a
     match_result event with profile metadata enriched from profiles.json."""
@@ -150,10 +138,8 @@ def load_face_database() -> tuple[np.ndarray, list[str], dict]:
     return embeddings, names, profiles
 
 
-# --------------------------------------------------------------------------- #
-# Camera loop                                                                 #
-# --------------------------------------------------------------------------- #
 def camera_loop():
+    # switch this with raspberry pi camera index when testing through raspberry pi
     cap = cv2.VideoCapture(LOCAL_CAMERA_IDX)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
@@ -163,12 +149,21 @@ def camera_loop():
 
     frame_count = 0
 
+    # Per-stage timing accumulators (ms), flushed to stdout every PERF_LOG_EVERY frames.
+    PERF_LOG_EVERY = 30
+    perf = {"read": 0.0, "gesture": 0.0, "face": 0.0, "encode": 0.0, "enqueue": 0.0, "total": 0.0}
+    perf_frames = 0
+    perf_state_counts: dict[str, int] = {}
+
     while True:
+        loop_t0 = time.perf_counter()
+
+        t0 = time.perf_counter()
         ret, frame = cap.read()
+        read_ms = (time.perf_counter() - t0) * 1000.0
         if not ret:
             continue
 
-        # Mirror so on-screen movement matches the user's perspective.
         frame = cv2.flip(frame, 1)
 
         frame_count += 1
@@ -178,33 +173,70 @@ def camera_loop():
         ts_ms = int(time.monotonic() * 1000)
         state = current_state
 
-        # Run the detector for the current state. Detectors that draw overlays
-        # (hand_detector) mutate `frame` in place so the overlay is baked into
-        # the JPEG that gets streamed.
+        gesture_ms = 0.0
+        face_ms = 0.0
+
         if state == "idle" and thumbs_detector is not None:
-            if thumbs_detector.process_frame(frame, ts_ms):
+            t0 = time.perf_counter()
+            triggered = thumbs_detector.process_frame(frame, ts_ms)
+            gesture_ms = (time.perf_counter() - t0) * 1000.0
+            if triggered:
                 event_queue.put({"type": "thumbs_up_detected"})
                 thumbs_detector.reset()
         elif state == "startup" and hand_detector is not None:
+            t0 = time.perf_counter()
             progress = hand_detector.process_frame(frame, ts_ms)
+            gesture_ms = (time.perf_counter() - t0) * 1000.0
             event_queue.put({"type": "startup_progress", **progress})
             if progress["system_ready"]:
                 event_queue.put({"type": "startup_complete"})
                 hand_detector.reset()
         elif state == "camera" and face_collector is not None:
+            t0 = time.perf_counter()
             event = face_collector.process_frame(frame)
+            face_ms = (time.perf_counter() - t0) * 1000.0
             if event is not None:
                 event_queue.put(event)
-        # state == "output": no detector runs; camera just streams.
 
+        t0 = time.perf_counter()
         ok, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
+        encode_ms = (time.perf_counter() - t0) * 1000.0
+
+        enqueue_ms = 0.0
         if ok:
+            t0 = time.perf_counter()
             event_queue.put(buffer.tobytes())
+            enqueue_ms = (time.perf_counter() - t0) * 1000.0
+
+        total_ms = (time.perf_counter() - loop_t0) * 1000.0
+
+        perf["read"] += read_ms
+        perf["gesture"] += gesture_ms
+        perf["face"] += face_ms
+        perf["encode"] += encode_ms
+        perf["enqueue"] += enqueue_ms
+        perf["total"] += total_ms
+        perf_frames += 1
+        perf_state_counts[state] = perf_state_counts.get(state, 0) + 1
+
+        if perf_frames >= PERF_LOG_EVERY:
+            avg = {k: v / perf_frames for k, v in perf.items()}
+            fps = 1000.0 / avg["total"] if avg["total"] > 0 else 0.0
+            qsize = event_queue.qsize()
+            print(
+                f"[perf] n={perf_frames} states={perf_state_counts} "
+                f"read={avg['read']:.1f} gesture={avg['gesture']:.1f} "
+                f"face={avg['face']:.1f} encode={avg['encode']:.1f} "
+                f"enqueue={avg['enqueue']:.1f} total={avg['total']:.1f}ms "
+                f"(~{fps:.1f} fps)  qsize={qsize}",
+                flush=True,
+            )
+            for k in perf:
+                perf[k] = 0.0
+            perf_frames = 0
+            perf_state_counts = {}
 
 
-# --------------------------------------------------------------------------- #
-# WebSocket broadcast                                                         #
-# --------------------------------------------------------------------------- #
 async def broadcast_event():
     while True:
         try:
@@ -217,7 +249,6 @@ async def broadcast_event():
         except queue.Empty:
             pass
         except Exception as exc:
-            # Don't kill the broadcast task on a stale websocket.
             print(f"broadcast_event: {exc}")
         await asyncio.sleep(0.01)
 
@@ -235,9 +266,6 @@ def _apply_state_change(new_state: str):
     current_state = new_state
 
 
-# --------------------------------------------------------------------------- #
-# FastAPI app                                                                 #
-# --------------------------------------------------------------------------- #
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global thumbs_detector, hand_detector, face_collector
@@ -289,9 +317,6 @@ async def websocket_camera(websocket: WebSocket):
             active_websocket = None
 
 
-# --------------------------------------------------------------------------- #
-# Static assets / SPA                                                         #
-# --------------------------------------------------------------------------- #
 if RAW_IMAGES_DIR.exists():
     app.mount("/images", StaticFiles(directory=str(RAW_IMAGES_DIR)), name="images")
 else:
