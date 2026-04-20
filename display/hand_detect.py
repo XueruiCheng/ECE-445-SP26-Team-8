@@ -1,289 +1,365 @@
-import argparse
-import gc
-import sys
+import math
+import random
 import time
 from dataclasses import dataclass
-from typing import Optional, Tuple
 
 import cv2
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-# Hand landmark indices from MediaPipe Hands / Hand Landmarker
+
+# -----------------------------
+# Config
+# -----------------------------
+CAMERA_ID = 0
+WIDTH = 1280
+HEIGHT = 720
+
+MODEL_PATH = "hand_landmarker.task"   # put this file in the same folder
+NUM_ATOMS = 1
+ATOM_RADIUS = 24
+SHOT_COOLDOWN = 0.40
+
+# Trigger tuning
+PINCH_PRESS_THRESHOLD = 0.050
+PINCH_RELEASE_THRESHOLD = 0.075
+
+MIN_HAND_DETECTION_CONFIDENCE = 0.6
+MIN_HAND_PRESENCE_CONFIDENCE = 0.6
+MIN_TRACKING_CONFIDENCE = 0.6
+
+# Aiming / target settings
+AIM_LENGTH_PIXELS = 180
+TARGET_SMOOTHING = 0.28
+TARGET_RADIUS = 20
+
+
+# -----------------------------
+# Landmark indices
+# -----------------------------
 WRIST = 0
-THUMB_CMC = 1
-THUMB_MCP = 2
-THUMB_IP = 3
 THUMB_TIP = 4
 INDEX_MCP = 5
-INDEX_PIP = 6
-INDEX_DIP = 7
 INDEX_TIP = 8
 MIDDLE_MCP = 9
-MIDDLE_PIP = 10
-MIDDLE_DIP = 11
-MIDDLE_TIP = 12
-RING_MCP = 13
-RING_PIP = 14
-RING_DIP = 15
-RING_TIP = 16
-PINKY_MCP = 17
-PINKY_PIP = 18
-PINKY_DIP = 19
-PINKY_TIP = 20
 
 
+# -----------------------------
+# Atom class
+# -----------------------------
 @dataclass
-class DetectorConfig:
-    model_path: str
-    camera_id: int = 0
-    width: int = 640
-    height: int = 480
-    min_hand_detection_confidence: float = 0.65
-    min_hand_presence_confidence: float = 0.65
-    min_tracking_confidence: float = 0.60
-    num_hands: int = 2
-    poll_hz: float = 12.0
-    fists_hold_s: float = 0.25
-    open_hold_s: float = 0.18
-    max_transition_s: float = 1.20
-    cooldown_s: float = 2.00
-    outward_delta_x: float = 0.03
-    outward_delta_y: float = 0.08
-    debug: bool = False
+class Atom:
+    x: float
+    y: float
+    vx: float
+    vy: float
+    radius: int = ATOM_RADIUS
+    alive: bool = True
+
+    def update(self, width: int, height: int):
+        if not self.alive:
+            return
+
+        self.x += self.vx
+        self.y += self.vy
+
+        if self.x < self.radius or self.x > width - self.radius:
+            self.vx *= -1
+            self.x = max(self.radius, min(width - self.radius, self.x))
+
+        if self.y < self.radius + 80 or self.y > height - self.radius:
+            self.vy *= -1
+            self.y = max(self.radius + 80, min(height - self.radius, self.y))
+
+    def draw(self, frame):
+        if not self.alive:
+            return
+
+        center = (int(self.x), int(self.y))
+        cv2.circle(frame, center, self.radius, (255, 220, 120), 2)
+        cv2.circle(frame, center, 7, (255, 220, 120), -1)
+        cv2.ellipse(frame, center, (self.radius + 10, self.radius - 4), 0, 0, 360, (180, 180, 255), 1)
+        cv2.ellipse(frame, center, (self.radius - 4, self.radius + 10), 60, 0, 360, (180, 180, 255), 1)
+
+    def contains(self, px: int, py: int) -> bool:
+        return (self.x - px) ** 2 + (self.y - py) ** 2 <= self.radius ** 2
 
 
-class QuantumBloomDetector:
-    def __init__(self, config: DetectorConfig):
-        self.cfg = config
-        self.state = "idle"
-        self.fists_started_at: Optional[float] = None
-        self.open_started_at: Optional[float] = None
-        self.cooldown_until: float = 0.0
-        self.baseline_distance: Optional[float] = None
-        self.triggered = False
-
-    @staticmethod
-    def _finger_extended(lms, tip: int, pip: int, mcp: int) -> bool:
-        # Normalized image coordinates: smaller y is higher on image.
-        # For most front-facing palms, extended fingers have tip above PIP and MCP.
-        return (lms[tip].y < lms[pip].y) and (lms[pip].y < lms[mcp].y)
-
-    @staticmethod
-    def _thumb_extended(lms, handedness: str) -> bool:
-        # Thumb is trickier because it extends mostly sideways.
-        # For a palm facing camera, thumb tip tends to sit laterally away from IP/MCP.
-        if handedness == "Left":
-            return lms[THUMB_TIP].x > lms[THUMB_IP].x > lms[THUMB_MCP].x
-        return lms[THUMB_TIP].x < lms[THUMB_IP].x < lms[THUMB_MCP].x
-
-    def _is_open_palm(self, lms, handedness: str) -> bool:
-        straight_count = 0
-        straight_count += int(self._thumb_extended(lms, handedness))
-        straight_count += int(self._finger_extended(lms, INDEX_TIP, INDEX_PIP, INDEX_MCP))
-        straight_count += int(self._finger_extended(lms, MIDDLE_TIP, MIDDLE_PIP, MIDDLE_MCP))
-        straight_count += int(self._finger_extended(lms, RING_TIP, RING_PIP, RING_MCP))
-        straight_count += int(self._finger_extended(lms, PINKY_TIP, PINKY_PIP, PINKY_MCP))
-        return straight_count >= 4
-
-    def _is_fist(self, lms, handedness: str) -> bool:
-        curled_count = 0
-        curled_count += int(not self._thumb_extended(lms, handedness))
-        curled_count += int(lms[INDEX_TIP].y > lms[INDEX_PIP].y)
-        curled_count += int(lms[MIDDLE_TIP].y > lms[MIDDLE_PIP].y)
-        curled_count += int(lms[RING_TIP].y > lms[RING_PIP].y)
-        curled_count += int(lms[PINKY_TIP].y > lms[PINKY_PIP].y)
-        return curled_count >= 4
-
-    @staticmethod
-    def _palm_center(lms) -> Tuple[float, float]:
-        xs = [lms[WRIST].x, lms[INDEX_MCP].x, lms[MIDDLE_MCP].x, lms[RING_MCP].x, lms[PINKY_MCP].x]
-        ys = [lms[WRIST].y, lms[INDEX_MCP].y, lms[MIDDLE_MCP].y, lms[RING_MCP].y, lms[PINKY_MCP].y]
-        return (sum(xs) / len(xs), sum(ys) / len(ys))
-
-    @staticmethod
-    def _distance(a: Tuple[float, float], b: Tuple[float, float]) -> float:
-        dx = a[0] - b[0]
-        dy = a[1] - b[1]
-        return (dx * dx + dy * dy) ** 0.5
-
-    def _parse_hands(self, result):
-        hands = {}
-        if not result.hand_landmarks or not result.handedness:
-            return hands
-
-        for i, lms in enumerate(result.hand_landmarks):
-            if i >= len(result.handedness) or not result.handedness[i]:
-                continue
-            label = result.handedness[i][0].category_name
-            hands[label] = {
-                "landmarks": lms,
-                "fist": self._is_fist(lms, label),
-                "open": self._is_open_palm(lms, label),
-                "center": self._palm_center(lms),
-            }
-        return hands
-
-    def update(self, result, now_s: float) -> bool:
-        self.triggered = False
-
-        if now_s < self.cooldown_until:
-            return False
-
-        hands = self._parse_hands(result)
-        left = hands.get("Left")
-        right = hands.get("Right")
-
-        if not left or not right:
-            self._reset_to_idle()
-            return False
-
-        both_fists = left["fist"] and right["fist"]
-        both_open = left["open"] and right["open"]
-        current_distance = self._distance(left["center"], right["center"])
-        vertical_ok = abs(left["center"][1] - right["center"][1]) <= self.cfg.outward_delta_y
-
-        if self.state == "idle":
-            if both_fists:
-                if self.fists_started_at is None:
-                    self.fists_started_at = now_s
-                    self.baseline_distance = current_distance
-                elif now_s - self.fists_started_at >= self.cfg.fists_hold_s:
-                    self.state = "armed"
-            else:
-                self.fists_started_at = None
-                self.baseline_distance = None
-            return False
-
-        if self.state == "armed":
-            if now_s - (self.fists_started_at or now_s) > self.cfg.max_transition_s:
-                self._reset_to_idle()
-                return False
-
-            if both_open and vertical_ok:
-                outward_ok = True
-                if self.baseline_distance is not None:
-                    outward_ok = current_distance >= self.baseline_distance + self.cfg.outward_delta_x
-
-                if outward_ok:
-                    if self.open_started_at is None:
-                        self.open_started_at = now_s
-                    elif now_s - self.open_started_at >= self.cfg.open_hold_s:
-                        self.triggered = True
-                        self.cooldown_until = now_s + self.cfg.cooldown_s
-                        self._reset_to_idle()
-                        return True
-                else:
-                    self.open_started_at = None
-            else:
-                self.open_started_at = None
-                if not both_fists and (self.fists_started_at is not None):
-                    # User abandoned the gesture.
-                    if now_s - self.fists_started_at > self.cfg.max_transition_s:
-                        self._reset_to_idle()
-            return False
-
-        self._reset_to_idle()
-        return False
-
-    def _reset_to_idle(self):
-        self.state = "idle"
-        self.fists_started_at = None
-        self.open_started_at = None
-        self.baseline_distance = None
+# -----------------------------
+# Utils
+# -----------------------------
+def clamp(value, low, high):
+    return max(low, min(high, value))
 
 
-def create_landmarker(model_path: str, cfg: DetectorConfig):
-    base_options = python.BaseOptions(model_asset_path=model_path)
+def lerp(a, b, t):
+    return a + (b - a) * t
+
+
+def normalized_to_pixel(lm, width, height):
+    return int(lm.x * width), int(lm.y * height)
+
+
+def landmark_distance(a, b):
+    return math.hypot(a.x - b.x, a.y - b.y)
+
+
+def create_atoms(width: int, height: int):
+    atoms = []
+    for _ in range(NUM_ATOMS):
+        while True:
+            x = random.randint(120, width - 120)
+            y = random.randint(140, height - 120)
+            vx = random.choice([-1, 1]) * random.uniform(2.5, 4.5)
+            vy = random.choice([-1, 1]) * random.uniform(2.0, 4.0)
+
+            good = True
+            for a in atoms:
+                if math.hypot(a.x - x, a.y - y) < 120:
+                    good = False
+                    break
+            if good:
+                atoms.append(Atom(x=x, y=y, vx=vx, vy=vy))
+                break
+    return atoms
+
+
+def project_target_from_hand(lms, width, height, aim_length=AIM_LENGTH_PIXELS):
+    """
+    Projects a target reticle outward from the finger direction.
+    Direction is based on INDEX_MCP -> INDEX_TIP.
+    """
+    tip = lms[INDEX_TIP]
+    mcp = lms[INDEX_MCP]
+
+    tip_x, tip_y = normalized_to_pixel(tip, width, height)
+    mcp_x, mcp_y = normalized_to_pixel(mcp, width, height)
+
+    dx = tip_x - mcp_x
+    dy = tip_y - mcp_y
+
+    mag = math.hypot(dx, dy)
+    if mag < 1e-6:
+        return tip_x, tip_y
+
+    dx /= mag
+    dy /= mag
+
+    target_x = int(tip_x + dx * aim_length)
+    target_y = int(tip_y + dy * aim_length)
+
+    target_x = clamp(target_x, 0, width - 1)
+    target_y = clamp(target_y, 80, height - 1)
+
+    return target_x, target_y
+
+
+def draw_target(frame, x, y, radius=TARGET_RADIUS, color=(0, 255, 255)):
+    cv2.circle(frame, (x, y), radius, color, 2)
+    cv2.circle(frame, (x, y), 6, color, 2)
+
+    tick = radius + 10
+    gap = radius - 4
+
+    cv2.line(frame, (x - tick, y), (x - gap, y), color, 2)
+    cv2.line(frame, (x + gap, y), (x + tick, y), color, 2)
+    cv2.line(frame, (x, y - tick), (x, y - gap), color, 2)
+    cv2.line(frame, (x, y + gap), (x, y + tick), color, 2)
+
+
+def draw_beam(frame, start_pt, end_pt):
+    cv2.line(frame, start_pt, end_pt, (255, 255, 0), 3)
+    cv2.circle(frame, end_pt, 12, (255, 255, 0), 2)
+
+
+def draw_hud(frame, hits, total, system_ready, trigger_down):
+    h, w = frame.shape[:2]
+    cv2.rectangle(frame, (0, 0), (w, 80), (20, 20, 20), -1)
+
+    cv2.putText(
+        frame,
+        f"Atoms hit: {hits}/{total}",
+        (20, 35),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1.0,
+        (255, 255, 255),
+        2,
+    )
+
+    trigger_text = "TRIGGER: ON" if trigger_down else "TRIGGER: OFF"
+    trigger_color = (0, 220, 255) if trigger_down else (160, 160, 160)
+    cv2.putText(
+        frame,
+        trigger_text,
+        (20, 68),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.75,
+        trigger_color,
+        2,
+    )
+
+    if system_ready:
+        cv2.putText(
+            frame,
+            "SYSTEM INITIALIZED",
+            (w // 2 - 220, 55),
+            cv2.FONT_HERSHEY_DUPLEX,
+            1.2,
+            (0, 255, 120),
+            3,
+        )
+    else:
+        cv2.putText(
+            frame,
+            "Hit all 3 atoms to initialize",
+            (w // 2 - 260, 55),
+            cv2.FONT_HERSHEY_DUPLEX,
+            0.9,
+            (200, 200, 200),
+            2,
+        )
+
+
+def create_landmarker():
+    base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
     options = vision.HandLandmarkerOptions(
         base_options=base_options,
         running_mode=vision.RunningMode.VIDEO,
-        num_hands=cfg.num_hands,
-        min_hand_detection_confidence=cfg.min_hand_detection_confidence,
-        min_hand_presence_confidence=cfg.min_hand_presence_confidence,
-        min_tracking_confidence=cfg.min_tracking_confidence,
+        num_hands=1,
+        min_hand_detection_confidence=MIN_HAND_DETECTION_CONFIDENCE,
+        min_hand_presence_confidence=MIN_HAND_PRESENCE_CONFIDENCE,
+        min_tracking_confidence=MIN_TRACKING_CONFIDENCE,
     )
     return vision.HandLandmarker.create_from_options(options)
 
 
-def parse_args() -> DetectorConfig:
-    parser = argparse.ArgumentParser(description="Detect a two-hand quantum bloom gesture.")
-    parser.add_argument("--model", type=str, default="hand_landmarker.task")
-    parser.add_argument("--camera-id", type=int, default=0)
-    parser.add_argument("--width", type=int, default=640)
-    parser.add_argument("--height", type=int, default=480)
-    parser.add_argument("--poll-hz", type=float, default=12.0)
-    parser.add_argument("--debug", action="store_true")
-    args = parser.parse_args()
-    return DetectorConfig(
-        model_path=args.model,
-        camera_id=args.camera_id,
-        width=args.width,
-        height=args.height,
-        poll_hz=args.poll_hz,
-        debug=args.debug,
-    )
-
-
-def main() -> int:
-    cfg = parse_args()
-
-    cap = cv2.VideoCapture(cfg.camera_id)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, cfg.width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cfg.height)
+def main():
+    cap = cv2.VideoCapture(CAMERA_ID)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     if not cap.isOpened():
-        print("ERROR: Could not open camera.", file=sys.stderr)
-        return 1
+        print("ERROR: Could not open camera.")
+        return
 
-    detector = QuantumBloomDetector(cfg)
-    sleep_s = max(0.0, 1.0 / cfg.poll_hz)
-    triggered = False
+    atoms = create_atoms(WIDTH, HEIGHT)
+    hits = 0
+    system_ready = False
+
+    target_x = WIDTH // 2
+    target_y = HEIGHT // 2
+
+    last_shot_time = 0.0
+    trigger_prev = False
+    beam_until = 0.0
+    beam_start = None
+    beam_end = None
+
+    last_timestamp_ms = 0
 
     try:
-        with create_landmarker(cfg.model_path, cfg) as landmarker:
+        with create_landmarker() as landmarker:
             while True:
                 ok, frame = cap.read()
                 if not ok:
-                    print("ERROR: Failed to read camera frame.", file=sys.stderr)
-                    return 1
+                    print("ERROR: Failed to read frame.")
+                    break
+
+                frame = cv2.flip(frame, 1)
+                frame = cv2.resize(frame, (WIDTH, HEIGHT))
 
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-                timestamp_ms = int(time.monotonic() * 1000)
+
+                current_ts = int(time.monotonic() * 1000)
+                timestamp_ms = max(current_ts, last_timestamp_ms + 1)
+                last_timestamp_ms = timestamp_ms
+
                 result = landmarker.detect_for_video(mp_image, timestamp_ms)
 
-                now_s = time.monotonic()
-                triggered = detector.update(result, now_s)
+                trigger_down = False
+                muzzle_point = None
 
-                if cfg.debug:
-                    status = detector.state
-                    text = "TRIGGERED" if triggered else status.upper()
-                    cv2.putText(frame, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
-                    cv2.imshow("quantum_bloom_debug", frame)
-                    key = cv2.waitKey(1) & 0xFF
-                    if key == 27 or key == ord("q"):
-                        break
+                if not system_ready:
+                    for atom in atoms:
+                        atom.update(WIDTH, HEIGHT)
+
+                if result.hand_landmarks and len(result.hand_landmarks) > 0:
+                    lms = result.hand_landmarks[0]
+
+                    raw_target_x, raw_target_y = project_target_from_hand(lms, WIDTH, HEIGHT)
+                    target_x = int(lerp(target_x, raw_target_x, TARGET_SMOOTHING))
+                    target_y = int(lerp(target_y, raw_target_y, TARGET_SMOOTHING))
+
+                    pinch_dist = landmark_distance(lms[THUMB_TIP], lms[INDEX_TIP])
+
+                    if trigger_prev:
+                        trigger_down = pinch_dist < PINCH_RELEASE_THRESHOLD
+                    else:
+                        trigger_down = pinch_dist < PINCH_PRESS_THRESHOLD
+
+                    muzzle_point = normalized_to_pixel(lms[INDEX_TIP], WIDTH, HEIGHT)
+
+                    now = time.time()
+                    just_fired = trigger_down and (not trigger_prev) and (now - last_shot_time > SHOT_COOLDOWN)
+
+                    if just_fired:
+                        last_shot_time = now
+                        beam_until = now + 0.10
+                        beam_start = muzzle_point
+                        beam_end = (target_x, target_y)
+
+                        if not system_ready:
+                            for atom in atoms:
+                                if atom.alive and atom.contains(target_x, target_y):
+                                    atom.alive = False
+                                    hits += 1
+                                    break
+
+                            if hits >= NUM_ATOMS:
+                                system_ready = True
+
+                    trigger_prev = trigger_down
                 else:
-                    # No GUI window in normal mode; keeps memory and CPU lower.
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        break
+                    trigger_prev = False
 
-                if triggered:
-                    print("QUANTUM_BLOOM_DETECTED", flush=True)
+                for atom in atoms:
+                    atom.draw(frame)
+
+                if beam_until > time.time() and beam_start is not None and beam_end is not None:
+                    draw_beam(frame, beam_start, beam_end)
+
+                draw_target(frame, target_x, target_y)
+                draw_hud(frame, hits, NUM_ATOMS, system_ready, trigger_down)
+
+                if system_ready:
+                    cv2.putText(
+                        frame,
+                        "READY",
+                        (WIDTH // 2 - 60, HEIGHT // 2),
+                        cv2.FONT_HERSHEY_TRIPLEX,
+                        2.0,
+                        (0, 255, 120),
+                        4,
+                    )
+
+                cv2.imshow("Quantum Atom Init", frame)
+                key = cv2.waitKey(1) & 0xFF
+
+                if key == 27 or key == ord("q"):
                     break
+                elif key == ord("r"):
+                    atoms = create_atoms(WIDTH, HEIGHT)
+                    hits = 0
+                    system_ready = False
+                    beam_until = 0.0
 
-                if sleep_s:
-                    time.sleep(sleep_s)
     finally:
         cap.release()
         cv2.destroyAllWindows()
-        gc.collect()
-
-    return 0 if triggered else 2
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
