@@ -16,12 +16,11 @@ CAMERA_ID = 0
 WIDTH = 1280
 HEIGHT = 720
 
-MODEL_PATH = "hand_landmarker.task"   # put this file in the same folder
+MODEL_PATH = "hand_landmarker.task"
 NUM_ATOMS = 1
 ATOM_RADIUS = 24
 SHOT_COOLDOWN = 0.40
 
-# Trigger tuning
 PINCH_PRESS_THRESHOLD = 0.050
 PINCH_RELEASE_THRESHOLD = 0.075
 
@@ -29,7 +28,6 @@ MIN_HAND_DETECTION_CONFIDENCE = 0.6
 MIN_HAND_PRESENCE_CONFIDENCE = 0.6
 MIN_TRACKING_CONFIDENCE = 0.6
 
-# Aiming / target settings
 AIM_LENGTH_PIXELS = 180
 TARGET_SMOOTHING = 0.28
 TARGET_RADIUS = 20
@@ -45,9 +43,6 @@ INDEX_TIP = 8
 MIDDLE_MCP = 9
 
 
-# -----------------------------
-# Atom class
-# -----------------------------
 @dataclass
 class Atom:
     x: float
@@ -86,9 +81,6 @@ class Atom:
         return (self.x - px) ** 2 + (self.y - py) ** 2 <= self.radius ** 2
 
 
-# -----------------------------
-# Utils
-# -----------------------------
 def clamp(value, low, high):
     return max(low, min(high, value))
 
@@ -126,10 +118,6 @@ def create_atoms(width: int, height: int):
 
 
 def project_target_from_hand(lms, width, height, aim_length=AIM_LENGTH_PIXELS):
-    """
-    Projects a target reticle outward from the finger direction.
-    Direction is based on INDEX_MCP -> INDEX_TIP.
-    """
     tip = lms[INDEX_TIP]
     mcp = lms[INDEX_MCP]
 
@@ -212,7 +200,7 @@ def draw_hud(frame, hits, total, system_ready, trigger_down):
     else:
         cv2.putText(
             frame,
-            "Hit all 3 atoms to initialize",
+            f"Hit all {total} atoms to initialize",
             (w // 2 - 260, 55),
             cv2.FONT_HERSHEY_DUPLEX,
             0.9,
@@ -234,6 +222,135 @@ def create_landmarker():
     return vision.HandLandmarker.create_from_options(options)
 
 
+# -----------------------------
+# Reusable detector for the server
+# -----------------------------
+class HandGameDetector:
+    """Owns the particle-gun mini-game state. Server calls process_frame() per
+    incoming camera frame; the detector mutates the frame in-place to draw the
+    game overlay (atoms, crosshair, beam, HUD), and returns a progress dict."""
+
+    def __init__(self):
+        self.landmarker = create_landmarker()
+        self._last_ts_ms = 0
+        self._initialised_for: tuple[int, int] | None = None
+        self.reset()
+
+    def reset(self):
+        # Atoms get sized to the actual frame on first process_frame call.
+        self.atoms: list[Atom] = []
+        self.hits = 0
+        self.system_ready = False
+        self.target_x = 0
+        self.target_y = 0
+        self.last_shot_time = 0.0
+        self.trigger_prev = False
+        self.beam_until = 0.0
+        self.beam_start: tuple[int, int] | None = None
+        self.beam_end: tuple[int, int] | None = None
+        self._initialised_for = None
+
+    def _ensure_atoms(self, w: int, h: int):
+        if self._initialised_for != (w, h):
+            self.atoms = create_atoms(w, h)
+            self.target_x = w // 2
+            self.target_y = h // 2
+            self._initialised_for = (w, h)
+
+    def process_frame(self, frame, ts_ms: int | None = None) -> dict:
+        h, w = frame.shape[:2]
+        self._ensure_atoms(w, h)
+
+        if ts_ms is None:
+            ts_ms = int(time.monotonic() * 1000)
+        ts_ms = max(ts_ms, self._last_ts_ms + 1)
+        self._last_ts_ms = ts_ms
+
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = self.landmarker.detect_for_video(mp_image, ts_ms)
+
+        trigger_down = False
+        muzzle_point: tuple[int, int] | None = None
+
+        if not self.system_ready:
+            for atom in self.atoms:
+                atom.update(w, h)
+
+        if result.hand_landmarks and len(result.hand_landmarks) > 0:
+            lms = result.hand_landmarks[0]
+
+            raw_target_x, raw_target_y = project_target_from_hand(lms, w, h)
+            self.target_x = int(lerp(self.target_x, raw_target_x, TARGET_SMOOTHING))
+            self.target_y = int(lerp(self.target_y, raw_target_y, TARGET_SMOOTHING))
+
+            pinch_dist = landmark_distance(lms[THUMB_TIP], lms[INDEX_TIP])
+
+            if self.trigger_prev:
+                trigger_down = pinch_dist < PINCH_RELEASE_THRESHOLD
+            else:
+                trigger_down = pinch_dist < PINCH_PRESS_THRESHOLD
+
+            muzzle_point = normalized_to_pixel(lms[INDEX_TIP], w, h)
+
+            now = time.time()
+            just_fired = (
+                trigger_down
+                and (not self.trigger_prev)
+                and (now - self.last_shot_time > SHOT_COOLDOWN)
+            )
+
+            if just_fired:
+                self.last_shot_time = now
+                self.beam_until = now + 0.10
+                self.beam_start = muzzle_point
+                self.beam_end = (self.target_x, self.target_y)
+
+                if not self.system_ready:
+                    for atom in self.atoms:
+                        if atom.alive and atom.contains(self.target_x, self.target_y):
+                            atom.alive = False
+                            self.hits += 1
+                            break
+
+                    if self.hits >= NUM_ATOMS:
+                        self.system_ready = True
+
+            self.trigger_prev = trigger_down
+        else:
+            self.trigger_prev = False
+
+        for atom in self.atoms:
+            atom.draw(frame)
+
+        if self.beam_until > time.time() and self.beam_start is not None and self.beam_end is not None:
+            draw_beam(frame, self.beam_start, self.beam_end)
+
+        draw_target(frame, self.target_x, self.target_y)
+        draw_hud(frame, self.hits, NUM_ATOMS, self.system_ready, trigger_down)
+
+        if self.system_ready:
+            cv2.putText(
+                frame,
+                "READY",
+                (w // 2 - 60, h // 2),
+                cv2.FONT_HERSHEY_TRIPLEX,
+                2.0,
+                (0, 255, 120),
+                4,
+            )
+
+        return {
+            "hits": self.hits,
+            "total": NUM_ATOMS,
+            "trigger_down": trigger_down,
+            "system_ready": self.system_ready,
+        }
+
+
+# -----------------------------
+# Standalone entry (for solo testing)
+# -----------------------------
 def main():
     cap = cv2.VideoCapture(CAMERA_ID)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
@@ -244,117 +361,27 @@ def main():
         print("ERROR: Could not open camera.")
         return
 
-    atoms = create_atoms(WIDTH, HEIGHT)
-    hits = 0
-    system_ready = False
-
-    target_x = WIDTH // 2
-    target_y = HEIGHT // 2
-
-    last_shot_time = 0.0
-    trigger_prev = False
-    beam_until = 0.0
-    beam_start = None
-    beam_end = None
-
-    last_timestamp_ms = 0
+    detector = HandGameDetector()
 
     try:
-        with create_landmarker() as landmarker:
-            while True:
-                ok, frame = cap.read()
-                if not ok:
-                    print("ERROR: Failed to read frame.")
-                    break
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                print("ERROR: Failed to read frame.")
+                break
 
-                frame = cv2.flip(frame, 1)
-                frame = cv2.resize(frame, (WIDTH, HEIGHT))
+            frame = cv2.flip(frame, 1)
+            frame = cv2.resize(frame, (WIDTH, HEIGHT))
 
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            detector.process_frame(frame)
 
-                current_ts = int(time.monotonic() * 1000)
-                timestamp_ms = max(current_ts, last_timestamp_ms + 1)
-                last_timestamp_ms = timestamp_ms
+            cv2.imshow("Quantum Atom Init", frame)
+            key = cv2.waitKey(1) & 0xFF
 
-                result = landmarker.detect_for_video(mp_image, timestamp_ms)
-
-                trigger_down = False
-                muzzle_point = None
-
-                if not system_ready:
-                    for atom in atoms:
-                        atom.update(WIDTH, HEIGHT)
-
-                if result.hand_landmarks and len(result.hand_landmarks) > 0:
-                    lms = result.hand_landmarks[0]
-
-                    raw_target_x, raw_target_y = project_target_from_hand(lms, WIDTH, HEIGHT)
-                    target_x = int(lerp(target_x, raw_target_x, TARGET_SMOOTHING))
-                    target_y = int(lerp(target_y, raw_target_y, TARGET_SMOOTHING))
-
-                    pinch_dist = landmark_distance(lms[THUMB_TIP], lms[INDEX_TIP])
-
-                    if trigger_prev:
-                        trigger_down = pinch_dist < PINCH_RELEASE_THRESHOLD
-                    else:
-                        trigger_down = pinch_dist < PINCH_PRESS_THRESHOLD
-
-                    muzzle_point = normalized_to_pixel(lms[INDEX_TIP], WIDTH, HEIGHT)
-
-                    now = time.time()
-                    just_fired = trigger_down and (not trigger_prev) and (now - last_shot_time > SHOT_COOLDOWN)
-
-                    if just_fired:
-                        last_shot_time = now
-                        beam_until = now + 0.10
-                        beam_start = muzzle_point
-                        beam_end = (target_x, target_y)
-
-                        if not system_ready:
-                            for atom in atoms:
-                                if atom.alive and atom.contains(target_x, target_y):
-                                    atom.alive = False
-                                    hits += 1
-                                    break
-
-                            if hits >= NUM_ATOMS:
-                                system_ready = True
-
-                    trigger_prev = trigger_down
-                else:
-                    trigger_prev = False
-
-                for atom in atoms:
-                    atom.draw(frame)
-
-                if beam_until > time.time() and beam_start is not None and beam_end is not None:
-                    draw_beam(frame, beam_start, beam_end)
-
-                draw_target(frame, target_x, target_y)
-                draw_hud(frame, hits, NUM_ATOMS, system_ready, trigger_down)
-
-                if system_ready:
-                    cv2.putText(
-                        frame,
-                        "READY",
-                        (WIDTH // 2 - 60, HEIGHT // 2),
-                        cv2.FONT_HERSHEY_TRIPLEX,
-                        2.0,
-                        (0, 255, 120),
-                        4,
-                    )
-
-                cv2.imshow("Quantum Atom Init", frame)
-                key = cv2.waitKey(1) & 0xFF
-
-                if key == 27 or key == ord("q"):
-                    break
-                elif key == ord("r"):
-                    atoms = create_atoms(WIDTH, HEIGHT)
-                    hits = 0
-                    system_ready = False
-                    beam_until = 0.0
+            if key == 27 or key == ord("q"):
+                break
+            elif key == ord("r"):
+                detector.reset()
 
     finally:
         cap.release()

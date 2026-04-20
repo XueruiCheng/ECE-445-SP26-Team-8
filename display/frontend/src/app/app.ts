@@ -1,4 +1,4 @@
-import { Component, HostListener, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
 import { AsyncPipe } from '@angular/common';
 import { MirrorStateService } from './services/mirror-state.service';
 import { MirrorState } from './models/mirror-state.model';
@@ -18,10 +18,4 @@ import { OutputComponent } from './components/output/output.component';
 export class App {
   mirrorState = inject(MirrorStateService);
   MirrorState = MirrorState;
-
-  @HostListener('document:keydown.space', ['$event'])
-  onSpacebar(event: Event): void {
-    event.preventDefault();
-    this.mirrorState.cycleState();
-  }
 }
