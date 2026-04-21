@@ -1,13 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+LOG=/tmp/kiosk.log
+exec > >(tee -a "$LOG") 2>&1
+echo "=== start-kiosk.sh $(date) ==="
+set -x
+
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if [ -f "$REPO_DIR/venv/bin/activate" ]; then
+  # shellcheck disable=SC1091
+  source "$REPO_DIR/venv/bin/activate"
+fi
 
 OUTPUT="HDMI-A-2"
 OTHER_OUTPUT="HDMI-A-1"
 ROTATION="left"
 URL="http://localhost:4200"
 
+echo "---- xrandr -q (before) ----"
+xrandr -q || true
+echo "---- /xrandr -q ----"
 xrandr --output "$OTHER_OUTPUT" --off || true
 xrandr --output "$OUTPUT" --rotate "$ROTATION"
 read W H < <(xrandr | awk -v out="$OUTPUT" '$1==out && $2=="connected" {
