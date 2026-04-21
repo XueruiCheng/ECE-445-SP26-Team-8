@@ -3,10 +3,12 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-OUTPUT="HDMI-1"
+OUTPUT="HDMI-A-2"
+OTHER_OUTPUT="HDMI-A-1"
 ROTATION="left"
 URL="http://localhost:4200"
 
+xrandr --output "$OTHER_OUTPUT" --off || true
 xrandr --output "$OUTPUT" --rotate "$ROTATION"
 read W H < <(xrandr | awk -v out="$OUTPUT" '$1==out && $2=="connected" {
   for (i=3;i<=NF;i++) if ($i ~ /[0-9]+x[0-9]+\+/) { split($i,a,"[x+]"); print a[1], a[2]; exit }
