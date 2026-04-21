@@ -13,8 +13,8 @@ if [ -f "$REPO_DIR/venv/bin/activate" ]; then
   source "$REPO_DIR/venv/bin/activate"
 fi
 
-OUTPUT="HDMI-A-2"
-OTHER_OUTPUT="HDMI-A-1"
+OUTPUT="HDMI-2"
+OTHER_OUTPUT="HDMI-1"
 ROTATION="left"
 URL="http://localhost:4200"
 
