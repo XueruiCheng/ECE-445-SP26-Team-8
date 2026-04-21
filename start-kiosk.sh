@@ -34,8 +34,8 @@ cd "$REPO_DIR/display/frontend"
 npm start -- --host 0.0.0.0 --port 4200 &
 NG_PID=$!
 
-cd "$REPO_DIR"
-uvicorn display.server:app --host 0.0.0.0 --port 8000 &
+cd "$REPO_DIR/display"
+uvicorn server:app --host 0.0.0.0 --port 8000 &
 UV_PID=$!
 
 cleanup() { kill "$NG_PID" "$UV_PID" 2>/dev/null || true; }
