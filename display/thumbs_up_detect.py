@@ -10,7 +10,7 @@ from mediapipe.tasks.python import vision
 # -----------------------------
 # Config
 # -----------------------------
-CAMERA_ID = 1
+CAMERA_ID = 0
 WIDTH = 1280
 HEIGHT = 720
 

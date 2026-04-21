@@ -15,7 +15,12 @@ app.prepare(ctx_id=0, det_size=(320, 320))
 
 db_embeddings, db_names = load_database()
 
-cap = cv2.VideoCapture(RASPBERRY_PI_LOGITECH_CAMERA)
+cap = cv2.VideoCapture(RASPBERRY_PI_LOGITECH_CAMERA, cv2.CAP_V4L2)
+cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+cap.set(cv2.CAP_PROP_FPS, 30)
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 time.sleep(2)
 
 if not cap.isOpened():
