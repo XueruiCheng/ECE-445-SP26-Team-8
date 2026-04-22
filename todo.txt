@@ -1,6 +1,4 @@
 1. Camera feed is very low frames
 2. Frontend when rotated vertically is getting shrunken and nothing looks right
-3. We need to transition from match results state to idle state but after some sort of signal or something
 4. camera is very srhunked and zoomed in
 5. Bluetooth setup from esp32 buttons eventually
-6. 
