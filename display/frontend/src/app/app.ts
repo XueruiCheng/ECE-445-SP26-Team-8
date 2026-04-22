@@ -3,14 +3,13 @@ import { AsyncPipe } from '@angular/common';
 import { MirrorStateService } from './services/mirror-state.service';
 import { MirrorState } from './models/mirror-state.model';
 import { IdleComponent } from './components/idle/idle.component';
-import { StartupComponent } from './components/startup/startup.component';
 import { CameraComponent } from './components/camera/camera.component';
 import { OutputComponent } from './components/output/output.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [AsyncPipe, IdleComponent, StartupComponent, CameraComponent, OutputComponent],
+  imports: [AsyncPipe, IdleComponent, CameraComponent, OutputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './app.html',
   styleUrl: './app.less'

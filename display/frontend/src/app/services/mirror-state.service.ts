@@ -3,13 +3,6 @@ import { BehaviorSubject } from 'rxjs';
 import { MirrorState, MatchResult } from '../models/mirror-state.model';
 import { WebSocketService, WsEvent } from './websocket.service';
 
-export interface StartupProgress {
-  hits: number;
-  total: number;
-  trigger_down: boolean;
-  system_ready: boolean;
-}
-
 export interface CollectingProgress {
   progress: number;
   total: number;
@@ -26,13 +19,11 @@ export class MirrorStateService {
 
   private stateSubject = new BehaviorSubject<MirrorState>(MirrorState.IDLE);
   private matchResultSubject = new BehaviorSubject<MatchResult | null>(null);
-  private startupProgressSubject = new BehaviorSubject<StartupProgress | null>(null);
   private collectingSubject = new BehaviorSubject<CollectingProgress | null>(null);
   private faceErrorSubject = new BehaviorSubject<FaceError | null>(null);
 
   state$ = this.stateSubject.asObservable();
   matchResult$ = this.matchResultSubject.asObservable();
-  startupProgress$ = this.startupProgressSubject.asObservable();
   collecting$ = this.collectingSubject.asObservable();
   faceError$ = this.faceErrorSubject.asObservable();
 
@@ -48,15 +39,9 @@ export class MirrorStateService {
 
   goToIdle(): void {
     this.matchResultSubject.next(null);
-    this.startupProgressSubject.next(null);
     this.collectingSubject.next(null);
     this.faceErrorSubject.next(null);
     this.transition(MirrorState.IDLE);
-  }
-
-  goToStartup(): void {
-    this.startupProgressSubject.next(null);
-    this.transition(MirrorState.STARTUP);
   }
 
   goToCamera(): void {
@@ -79,23 +64,6 @@ export class MirrorStateService {
     switch (event.type) {
       case 'thumbs_up_detected':
         if (this.currentState === MirrorState.IDLE) {
-          this.goToStartup();
-        }
-        break;
-
-      case 'startup_progress':
-        if (this.currentState === MirrorState.STARTUP) {
-          this.startupProgressSubject.next({
-            hits: Number(event['hits'] ?? 0),
-            total: Number(event['total'] ?? 0),
-            trigger_down: Boolean(event['trigger_down']),
-            system_ready: Boolean(event['system_ready']),
-          });
-        }
-        break;
-
-      case 'startup_complete':
-        if (this.currentState === MirrorState.STARTUP) {
           this.goToCamera();
         }
         break;

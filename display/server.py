@@ -5,7 +5,6 @@ from fastapi.responses import FileResponse
 
 from face_match import find_top_matches
 from thumbs_up_detect import ThumbsUpDetector
-from hand_detect import HandGameDetector
 
 import os
 import json
@@ -47,7 +46,6 @@ active_websocket: WebSocket | None = None
 current_state: str = "idle"
 
 thumbs_detector: ThumbsUpDetector | None = None
-hand_detector: HandGameDetector | None = None
 face_collector = None  # type: FaceCollector | None
 
 
@@ -186,14 +184,6 @@ def camera_loop():
             if triggered:
                 event_queue.put({"type": "thumbs_up_detected"})
                 thumbs_detector.reset()
-        elif state == "startup" and hand_detector is not None:
-            t0 = time.perf_counter()
-            progress = hand_detector.process_frame(frame, ts_ms)
-            gesture_ms = (time.perf_counter() - t0) * 1000.0
-            event_queue.put({"type": "startup_progress", **progress})
-            if progress["system_ready"]:
-                event_queue.put({"type": "startup_complete"})
-                hand_detector.reset()
         elif state == "camera" and face_collector is not None:
             t0 = time.perf_counter()
             event = face_collector.process_frame(frame)
@@ -262,8 +252,6 @@ def _apply_state_change(new_state: str):
     global current_state
     if new_state == "idle" and thumbs_detector is not None:
         thumbs_detector.reset()
-    elif new_state == "startup" and hand_detector is not None:
-        hand_detector.reset()
     elif new_state == "camera" and face_collector is not None:
         face_collector.reset()
     current_state = new_state
@@ -271,11 +259,10 @@ def _apply_state_change(new_state: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global thumbs_detector, hand_detector, face_collector
+    global thumbs_detector, face_collector
     db_embeddings, db_names, profiles = load_face_database()
     face_collector = FaceCollector(db_embeddings, db_names, profiles)
     thumbs_detector = ThumbsUpDetector()
-    hand_detector = HandGameDetector()
 
     threading.Thread(target=camera_loop, daemon=True).start()
     asyncio.create_task(broadcast_event())
@@ -309,7 +296,7 @@ async def websocket_camera(websocket: WebSocket):
                 continue
             if msg.get("type") == "state_change":
                 new_state = msg.get("state")
-                if new_state in ("idle", "startup", "camera", "output"):
+                if new_state in ("idle", "camera", "output"):
                     _apply_state_change(new_state)
     except WebSocketDisconnect:
         pass
