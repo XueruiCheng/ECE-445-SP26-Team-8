@@ -7,11 +7,13 @@ from face_match import find_top_matches
 from thumbs_up_detect import ThumbsUpDetector
 
 import os
+import sys
 import json
 import time
 import queue
 import asyncio
 import threading
+import subprocess
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -264,6 +266,23 @@ async def broadcast_event():
         await asyncio.sleep(0.01)
 
 
+def _set_display_power(on: bool) -> None:
+    """Force HDMI backlight on/off via DPMS so idle looks like a powered-off
+    monitor. No-op off Linux (dev machines) or if xset is missing."""
+    if not sys.platform.startswith("linux"):
+        return
+    arg = "on" if on else "off"
+    try:
+        subprocess.run(
+            ["xset", "dpms", "force", arg],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        pass
+
+
 def _apply_state_change(new_state: str):
     """Reset the detector for the state we're entering, then update current_state.
     Reset before the swap so camera_loop never sees a stale detector."""
@@ -272,6 +291,7 @@ def _apply_state_change(new_state: str):
         thumbs_detector.reset()
     elif new_state == "camera" and face_collector is not None:
         face_collector.reset()
+    _set_display_power(new_state != "idle")
     current_state = new_state
 
 
