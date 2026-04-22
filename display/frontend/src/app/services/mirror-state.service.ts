@@ -92,6 +92,10 @@ export class MirrorStateService {
           const matches = event['matches'] as MatchResult[] | undefined;
           if (matches && matches.length > 0) {
             this.goToOutput(matches[0]);
+          } else {
+            this.collectingSubject.next(null);
+            this.faceErrorSubject.next({ reason: 'no_match', count: 0 });
+            setTimeout(() => this.goToIdle(), 2500);
           }
         }
         break;

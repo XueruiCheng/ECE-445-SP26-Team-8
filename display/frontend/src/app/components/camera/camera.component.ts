@@ -46,7 +46,12 @@ import { MirrorStateService } from '../../services/mirror-state.service';
         </div>
       } @else if (mirrorState.faceError$ | async; as err) {
         <div class="error">
-          {{ err.reason === 'no_face' ? 'NO FACE DETECTED' : 'MULTIPLE FACES — STAND ALONE' }}
+          @switch (err.reason) {
+            @case ('no_face') { NO FACE DETECTED }
+            @case ('multiple_faces') { MULTIPLE FACES — STAND ALONE }
+            @case ('no_match') { NO MATCH FOUND — TRY AGAIN }
+            @default { ERROR }
+          }
         </div>
       } @else {
         <div class="instructions">HOLD STILL — ANALYZING FEATURES</div>
