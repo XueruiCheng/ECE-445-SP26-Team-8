@@ -38,7 +38,11 @@ cd "$REPO_DIR/display"
 uvicorn server:app --host 0.0.0.0 --port 8000 &
 UV_PID=$!
 
-cleanup() { kill "$NG_PID" "$UV_PID" 2>/dev/null || true; }
+# Hide the mouse cursor (prereq: sudo apt install -y unclutter).
+unclutter -idle 0 -root &
+UNCLUTTER_PID=$!
+
+cleanup() { kill "$NG_PID" "$UV_PID" "$UNCLUTTER_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
 until curl -fsS http://localhost:4200 >/dev/null 2>&1; do sleep 1; done

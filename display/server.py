@@ -40,6 +40,10 @@ DB_NAMES_PATH = DB_DIR / "names.json"
 DB_PROFILES_PATH = DB_DIR / "profiles.json"
 
 event_queue: queue.Queue = queue.Queue()
+# Latest JPEG frame from camera_loop; broadcast_event always sends the newest
+# and discards any frame that arrived while the previous one was in flight.
+latest_frame: bytes | None = None
+frame_lock = threading.Lock()
 active_websocket: WebSocket | None = None
 
 # Mutated only by the WebSocket handler (single writer); read by camera_loop.
@@ -198,7 +202,9 @@ def camera_loop():
         enqueue_ms = 0.0
         if ok:
             t0 = time.perf_counter()
-            event_queue.put(buffer.tobytes())
+            global latest_frame
+            with frame_lock:
+                latest_frame = buffer.tobytes()
             enqueue_ms = (time.perf_counter() - t0) * 1000.0
 
         total_ms = (time.perf_counter() - loop_t0) * 1000.0
@@ -231,16 +237,28 @@ def camera_loop():
 
 
 async def broadcast_event():
+    global latest_frame
     while True:
         try:
-            event = event_queue.get_nowait()
-            if active_websocket is not None:
-                if isinstance(event, bytes):
-                    await active_websocket.send_bytes(event)
-                else:
+            # Drain all pending JSON events first so status never lags frames.
+            while True:
+                try:
+                    event = event_queue.get_nowait()
+                except queue.Empty:
+                    break
+                if active_websocket is not None:
                     await active_websocket.send_json(event)
-        except queue.Empty:
-            pass
+
+            # Then grab + clear the newest frame; any older frame has already
+            # been overwritten by camera_loop, which is exactly what we want.
+            frame_to_send: bytes | None = None
+            with frame_lock:
+                if latest_frame is not None:
+                    frame_to_send = latest_frame
+                    latest_frame = None
+
+            if frame_to_send is not None and active_websocket is not None:
+                await active_websocket.send_bytes(frame_to_send)
         except Exception as exc:
             print(f"broadcast_event: {exc}")
         await asyncio.sleep(0.01)

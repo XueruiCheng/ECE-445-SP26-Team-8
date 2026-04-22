@@ -13,6 +13,8 @@ export interface FaceError {
   count: number;
 }
 
+const OUTPUT_AUTO_IDLE_MS = 10000;
+
 @Injectable({ providedIn: 'root' })
 export class MirrorStateService {
   private webSocket = inject(WebSocketService);
@@ -21,6 +23,7 @@ export class MirrorStateService {
   private matchResultSubject = new BehaviorSubject<MatchResult | null>(null);
   private collectingSubject = new BehaviorSubject<CollectingProgress | null>(null);
   private faceErrorSubject = new BehaviorSubject<FaceError | null>(null);
+  private outputTimer: ReturnType<typeof setTimeout> | null = null;
 
   state$ = this.stateSubject.asObservable();
   matchResult$ = this.matchResultSubject.asObservable();
@@ -38,6 +41,7 @@ export class MirrorStateService {
   }
 
   goToIdle(): void {
+    this.clearOutputTimer();
     this.matchResultSubject.next(null);
     this.collectingSubject.next(null);
     this.faceErrorSubject.next(null);
@@ -45,6 +49,7 @@ export class MirrorStateService {
   }
 
   goToCamera(): void {
+    this.clearOutputTimer();
     this.collectingSubject.next(null);
     this.faceErrorSubject.next(null);
     this.transition(MirrorState.CAMERA);
@@ -53,6 +58,15 @@ export class MirrorStateService {
   goToOutput(result: MatchResult): void {
     this.matchResultSubject.next(result);
     this.transition(MirrorState.OUTPUT);
+    this.clearOutputTimer();
+    this.outputTimer = setTimeout(() => this.goToIdle(), OUTPUT_AUTO_IDLE_MS);
+  }
+
+  private clearOutputTimer(): void {
+    if (this.outputTimer !== null) {
+      clearTimeout(this.outputTimer);
+      this.outputTimer = null;
+    }
   }
 
   private transition(next: MirrorState): void {
