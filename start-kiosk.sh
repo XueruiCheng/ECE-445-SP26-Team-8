@@ -39,7 +39,7 @@ fi
 OUTPUT="HDMI-2"
 OTHER_OUTPUT="HDMI-1"
 ROTATION="left"
-URL="http://localhost:8000"
+SPLASH_URL="file://$REPO_DIR/display/kiosk-splash.html"
 
 echo "---- xrandr -q (before) ----"
 xrandr -q || true
@@ -78,4 +78,4 @@ exec chromium-browser \
   --noerrdialogs \
   --disable-session-crashed-bubble \
   --disable-infobars \
-  "$URL"
+  "$SPLASH_URL"

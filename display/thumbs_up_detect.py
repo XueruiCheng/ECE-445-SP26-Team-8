@@ -20,7 +20,9 @@ MIN_HAND_DETECTION_CONFIDENCE = 0.6
 MIN_HAND_PRESENCE_CONFIDENCE = 0.6
 MIN_TRACKING_CONFIDENCE = 0.6
 
-THUMBS_UP_HOLD_TIME = 0.35
+FIST_TO_OPEN_MIN_TIME = 0.15
+FIST_TO_OPEN_MAX_TIME = 0.7
+OPEN_PALM_HOLD_TIME = 0.1
 
 
 # -----------------------------
@@ -77,8 +79,8 @@ def finger_curled(lms, tip_idx, pip_idx):
     return lms[tip_idx].y > lms[pip_idx].y
 
 
-def thumb_up(lms):
-    return (lms[THUMB_TIP].y < lms[THUMB_IP].y < lms[THUMB_MCP].y)
+def finger_extended(lms, tip_idx, pip_idx):
+    return lms[tip_idx].y < lms[pip_idx].y
 
 
 def thumb_far_from_hand(lms):
@@ -95,17 +97,42 @@ def thumb_far_from_hand(lms):
     return thumb_to_index > 0.45 * wrist_to_index
 
 
-def is_thumbs_up(lms):
-    thumb_ok = thumb_up(lms) and thumb_far_from_hand(lms)
-
+def curled_finger_count(lms):
     index_curled = finger_curled(lms, INDEX_TIP, INDEX_PIP)
     middle_curled = finger_curled(lms, MIDDLE_TIP, MIDDLE_PIP)
     ring_curled = finger_curled(lms, RING_TIP, RING_PIP)
     pinky_curled = finger_curled(lms, PINKY_TIP, PINKY_PIP)
+    return sum([index_curled, middle_curled, ring_curled, pinky_curled])
 
-    curled_count = sum([index_curled, middle_curled, ring_curled, pinky_curled])
 
-    return thumb_ok and curled_count >= 3
+def extended_finger_count(lms):
+    index_extended = finger_extended(lms, INDEX_TIP, INDEX_PIP)
+    middle_extended = finger_extended(lms, MIDDLE_TIP, MIDDLE_PIP)
+    ring_extended = finger_extended(lms, RING_TIP, RING_PIP)
+    pinky_extended = finger_extended(lms, PINKY_TIP, PINKY_PIP)
+    return sum([index_extended, middle_extended, ring_extended, pinky_extended])
+
+
+def thumb_tucked(lms):
+    thumb_tip = lms[THUMB_TIP]
+    index_mcp = lms[INDEX_MCP]
+    wrist = lms[WRIST]
+
+    thumb_to_index = math.hypot(thumb_tip.x - index_mcp.x, thumb_tip.y - index_mcp.y)
+    wrist_to_index = math.hypot(wrist.x - index_mcp.x, wrist.y - index_mcp.y)
+
+    if wrist_to_index < 1e-6:
+        return False
+
+    return thumb_to_index < 0.38 * wrist_to_index
+
+
+def is_closed_fist(lms):
+    return curled_finger_count(lms) >= 4 and thumb_tucked(lms)
+
+
+def is_open_palm(lms):
+    return extended_finger_count(lms) >= 4 and thumb_far_from_hand(lms)
 
 
 def draw_status(frame, text, color):
@@ -125,18 +152,33 @@ def draw_status(frame, text, color):
 # Reusable detector for the server
 # -----------------------------
 class ThumbsUpDetector:
-    def __init__(self, hold_time: float = THUMBS_UP_HOLD_TIME):
-        self.hold_time = hold_time
+    WAITING_FOR_FIST = "waiting_for_fist"
+    WAITING_FOR_OPEN_PALM = "waiting_for_open_palm"
+    CONFIRMING_OPEN_PALM = "confirming_open_palm"
+
+    def __init__(
+        self,
+        min_transition_time: float = FIST_TO_OPEN_MIN_TIME,
+        max_transition_time: float = FIST_TO_OPEN_MAX_TIME,
+        open_palm_hold_time: float = OPEN_PALM_HOLD_TIME,
+    ):
+        self.min_transition_time = min_transition_time
+        self.max_transition_time = max_transition_time
+        self.open_palm_hold_time = open_palm_hold_time
         self.landmarker = create_landmarker()
-        self._started_at: float | None = None
+        self._state = self.WAITING_FOR_FIST
+        self._fist_seen_at: float | None = None
+        self._open_palm_started_at: float | None = None
         self._last_ts_ms = 0
 
     def reset(self):
-        self._started_at = None
+        self._state = self.WAITING_FOR_FIST
+        self._fist_seen_at = None
+        self._open_palm_started_at = None
 
     def process_frame(self, frame, ts_ms: int | None = None) -> bool:
-        """Run one inference on a BGR frame. Returns True once the user has held
-        a thumbs-up for `hold_time` seconds."""
+        """Run one inference on a BGR frame. Returns True once the user performs
+        the activation sequence: closed fist -> open palm."""
         if ts_ms is None:
             ts_ms = int(time.monotonic() * 1000)
         ts_ms = max(ts_ms, self._last_ts_ms + 1)
@@ -147,18 +189,48 @@ class ThumbsUpDetector:
 
         result = self.landmarker.detect_for_video(mp_image, ts_ms)
 
-        thumbs_up_now = False
-        if result.hand_landmarks and len(result.hand_landmarks) > 0:
-            thumbs_up_now = is_thumbs_up(result.hand_landmarks[0])
-
         now = time.time()
-        if thumbs_up_now:
-            if self._started_at is None:
-                self._started_at = now
-            elif now - self._started_at >= self.hold_time:
+        if not result.hand_landmarks or len(result.hand_landmarks) == 0:
+            self.reset()
+            return False
+
+        landmarks = result.hand_landmarks[0]
+        fist_now = is_closed_fist(landmarks)
+        open_palm_now = is_open_palm(landmarks)
+
+        if self._state == self.WAITING_FOR_FIST:
+            if fist_now:
+                self._state = self.WAITING_FOR_OPEN_PALM
+                self._fist_seen_at = now
+            return False
+
+        if self._state == self.WAITING_FOR_OPEN_PALM:
+            if self._fist_seen_at is None:
+                self.reset()
+                return False
+
+            elapsed = now - self._fist_seen_at
+            if elapsed > self.max_transition_time:
+                self.reset()
+                return False
+
+            if open_palm_now and elapsed >= self.min_transition_time:
+                self._state = self.CONFIRMING_OPEN_PALM
+                self._open_palm_started_at = now
+            elif not fist_now:
+                self.reset()
+            return False
+
+        if self._state == self.CONFIRMING_OPEN_PALM:
+            if not open_palm_now:
+                self.reset()
+                return False
+            if self._open_palm_started_at is None:
+                self.reset()
+                return False
+            if now - self._open_palm_started_at >= self.open_palm_hold_time:
+                self.reset()
                 return True
-        else:
-            self._started_at = None
 
         return False
 
@@ -194,11 +266,11 @@ def main():
             detected = detector.process_frame(frame)
 
             if detected:
-                draw_status(frame, "CONFIRMED", (0, 255, 120))
+                draw_status(frame, "ACTIVATED", (0, 255, 120))
                 cv2.putText(
                     frame,
-                    "THUMBS UP DETECTED",
-                    (WIDTH // 2 - 230, HEIGHT // 2),
+                    "QUANTUM FLICK OPEN",
+                    (WIDTH // 2 - 250, HEIGHT // 2),
                     cv2.FONT_HERSHEY_TRIPLEX,
                     1.2,
                     (0, 255, 120),
@@ -208,10 +280,12 @@ def main():
                 cv2.imshow("Thumbs Up Detector", frame)
                 cv2.waitKey(1000)
                 break
-            elif detector._started_at is not None:
-                draw_status(frame, "THUMBS UP", (0, 220, 255))
+            elif detector._state == detector.WAITING_FOR_OPEN_PALM:
+                draw_status(frame, "OPEN PALM", (0, 220, 255))
+            elif detector._state == detector.CONFIRMING_OPEN_PALM:
+                draw_status(frame, "HOLD OPEN", (0, 220, 255))
             else:
-                draw_status(frame, "WAITING", (200, 200, 200))
+                draw_status(frame, "MAKE A FIST", (200, 200, 200))
 
             cv2.imshow("Thumbs Up Detector", frame)
             key = cv2.waitKey(1) & 0xFF
