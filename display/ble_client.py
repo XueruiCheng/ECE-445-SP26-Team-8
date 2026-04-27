@@ -42,62 +42,60 @@ async def _main() -> None:
         return
 
     server.write_perf_log("ble_started")
-    POLL_INTERVAL = 0.2  # 5 Hz
 
     while True:
         try:
             device = await BleakScanner.find_device_by_name(DEVICE_NAME, timeout=SCAN_TIMEOUT_S)
             if device is None:
+                server.write_perf_log("ble_scan_no_device", device_name=DEVICE_NAME)
                 await asyncio.sleep(RESCAN_BACKOFF_S)
                 continue
+
+            server.write_perf_log("ble_device_found", address=str(device.address))
 
             async with BleakClient(device) as client:
                 server.write_perf_log("ble_connected", address=str(device.address))
 
-                baseline: str | None = None
-                last_state: str = ""
+                def _on_notify(_handle, data: bytearray) -> None:
+                    _handle_payload(bytes(data))
+
+                await client.start_notify(CHAR_UUID, _on_notify)
+                server.write_perf_log("ble_notify_started", char=CHAR_UUID)
 
                 while client.is_connected:
-                    state, _ = server.get_state_snapshot()
+                    await asyncio.sleep(1.0)
 
-                    # On entering category_select, snapshot current value as baseline.
-                    if state == "category_select" and last_state != "category_select":
-                        try:
-                            raw = await client.read_gatt_char(CHAR_UUID)
-                            baseline = _parse_category(raw)
-                        except Exception:
-                            baseline = None
-                        server.write_perf_log("ble_baseline_set", baseline=baseline)
-                    last_state = state
-
-                    if state == "category_select":
-                        try:
-                            raw = await client.read_gatt_char(CHAR_UUID)
-                            cat = _parse_category(raw)
-                        except Exception:
-                            cat = None
-
-                        if cat in VALID and cat != baseline:
-                            server.set_selected_category(cat)
-                            server.enqueue_event(
-                                {"type": "category_selected", "category": cat},
-                                source="ble_client",
-                            )
-                            baseline = cat  # prevent re-fire on next poll
-
-                    await asyncio.sleep(POLL_INTERVAL)
+                server.write_perf_log("ble_disconnected", address=str(device.address))
 
         except BleakError as exc:
             server.write_perf_log("ble_error", error=str(exc))
+            print(f"ble_client: BleakError {exc}")
             await asyncio.sleep(DISCONNECT_BACKOFF_S)
         except Exception as exc:
             server.write_perf_log("ble_loop_exception", error=str(exc))
+            print(f"ble_client: unexpected error {exc}")
             await asyncio.sleep(DISCONNECT_BACKOFF_S)
 
 
-def _parse_category(data: bytearray | bytes) -> str | None:
+def _handle_payload(data: bytes) -> None:
     try:
-        obj = json.loads(bytes(data).decode("utf-8").strip())
-        return obj.get("category")
-    except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
-        return None
+        text = data.decode("utf-8").strip()
+        obj = json.loads(text)
+        cat = obj.get("category")
+    except (UnicodeDecodeError, json.JSONDecodeError, AttributeError) as exc:
+        server.write_perf_log("ble_parse_error", error=str(exc), raw=repr(data[:64]))
+        return
+
+    if cat not in VALID:
+        return
+
+    state, _ = server.get_state_snapshot()
+    if state != "category_select":
+        server.write_perf_log("ble_ignored_wrong_state", category=cat, state=state)
+        return
+
+    server.set_selected_category(cat)
+    server.enqueue_event(
+        {"type": "category_selected", "category": cat},
+        source="ble_client",
+    )

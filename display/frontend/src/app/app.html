@@ -1,4 +1,8 @@
-<div class="mirror-root">
+<div
+  class="mirror-root"
+  [class.theme-idle]="(mirrorState.state$ | async) === MirrorState.IDLE"
+  [class.theme-active-bright]="(mirrorState.state$ | async) !== MirrorState.IDLE"
+>
   @switch (mirrorState.state$ | async) {
     @case (MirrorState.IDLE) {
       <app-idle class="state-view" />

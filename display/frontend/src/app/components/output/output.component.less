@@ -1,24 +1,28 @@
-@neon-cyan: #00f0ff;
-
 .output-screen {
   width: 100vw;
   height: 100vh;
-  background: #000;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 3vh 3vw;
 }
 
 .result-container {
   display: flex;
-  flex-direction: column;
-  gap: 2rem;
-  align-items: center;
-  max-width: 90vw;
-  padding: 2rem;
+  gap: clamp(1.8rem, 3.5vw, 3rem);
+  align-items: stretch;
+  justify-content: center;
+  width: min(94vw, 1320px);
+  padding: clamp(1.6rem, 2.5vw, 2.4rem);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(236, 248, 255, 0.92)),
+    radial-gradient(circle at top right, rgba(0, 216, 255, 0.1), transparent 38%);
+  border: 1px solid rgba(0, 128, 201, 0.18);
+  box-shadow: var(--qm-shadow-strong);
+  backdrop-filter: blur(10px);
 }
 
-// Left: Image panel
 .image-panel {
   display: flex;
   flex-direction: column;
@@ -28,12 +32,13 @@
 }
 
 .image-frame {
-  width: 280px;
-  height: 340px;
-  border: 1px solid rgba(0, 240, 255, 0.3);
-  padding: 4px;
+  width: 300px;
+  height: 370px;
+  border: 2px solid rgba(0, 128, 201, 0.26);
+  padding: 6px;
   position: relative;
-  box-shadow: 0 0 20px rgba(0, 240, 255, 0.1);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: var(--qm-shadow-soft);
 
   img {
     width: 100%;
@@ -47,102 +52,108 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.2rem;
+  gap: 0.3rem;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 0.9rem 1.2rem;
+  border: 1px solid rgba(0, 128, 201, 0.16);
+  box-shadow: var(--qm-shadow-soft);
 }
 
 .match-pct {
-  font-size: 2rem;
+  font-size: 2.5rem;
   font-weight: 900;
-  color: @neon-cyan;
-  text-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+  color: var(--qm-accent-deep);
+  text-shadow: 0 0 12px rgba(0, 216, 255, 0.16);
 }
 
 .match-label {
-  font-size: 0.6rem;
-  letter-spacing: 0.4em;
-  color: rgba(0, 240, 255, 0.5);
+  font-size: 0.68rem;
+  letter-spacing: 0.34em;
+  color: var(--qm-text-muted);
 }
 
-// Right: Info panel
 .info-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.55rem;
+  min-width: 0;
+  flex: 1;
 }
 
 .label {
-  font-size: 0.6rem;
-  letter-spacing: 0.4em;
-  color: rgba(0, 240, 255, 0.5);
-  margin-bottom: 0.3rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.34em;
+  color: var(--qm-accent-deep);
+  margin-bottom: 0.35rem;
 }
 
 .name {
-  font-size: 2.5rem;
+  font-size: clamp(2.4rem, 4.4vw, 3.6rem);
   font-weight: 900;
-  color: #fff;
-  letter-spacing: 0.05em;
-  text-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
-  line-height: 1.1;
+  color: var(--qm-text-primary);
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 12px rgba(0, 216, 255, 0.1);
+  line-height: 1.08;
 }
 
 .position {
-  font-size: 1rem;
+  font-size: 1.15rem;
   font-weight: 700;
-  color: @neon-cyan;
+  color: var(--qm-accent-deep);
   letter-spacing: 0.08em;
-  margin-top: 0.5rem;
+  margin-top: 0.6rem;
 }
 
 .role {
-  font-size: 0.7rem;
-  font-weight: 400;
-  color: rgba(255, 255, 255, 0.4);
-  letter-spacing: 0.1em;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--qm-text-muted);
+  letter-spacing: 0.14em;
 }
 
 .research-areas {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.6rem;
   margin-top: 1rem;
 }
 
 .chip {
-  font-size: 0.6rem;
-  letter-spacing: 0.15em;
-  padding: 0.4rem 0.8rem;
-  border: 1px solid rgba(0, 240, 255, 0.25);
-  color: rgba(0, 240, 255, 0.7);
-  background: rgba(0, 240, 255, 0.03);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  padding: 0.48rem 0.9rem;
+  border: 1px solid rgba(0, 128, 201, 0.2);
+  color: var(--qm-text-secondary);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 24px rgba(13, 98, 146, 0.08);
 }
 
-// Profile summary
 .summary-block {
-  margin-top: 1.5rem;
-  max-width: 540px;
-  border-left: 1px solid rgba(0, 240, 255, 0.35);
-  padding: 0.4rem 0 0.4rem 1rem;
+  margin-top: 1.6rem;
+  max-width: 620px;
+  background: rgba(255, 255, 255, 0.74);
+  border-left: 3px solid rgba(0, 149, 255, 0.62);
+  padding: 0.8rem 1rem 0.85rem 1.1rem;
+  box-shadow: var(--qm-shadow-soft);
 }
 
 .summary-label {
-  font-size: 0.6rem;
-  letter-spacing: 0.4em;
-  color: rgba(0, 240, 255, 0.55);
-  margin-bottom: 0.5rem;
+  font-size: 0.64rem;
+  letter-spacing: 0.34em;
+  color: var(--qm-accent-deep);
+  margin-bottom: 0.55rem;
 }
 
 .summary-text {
-  font-size: 0.86rem;
-  line-height: 1.55;
-  color: rgba(255, 255, 255, 0.78);
-  letter-spacing: 0.02em;
+  font-size: 0.96rem;
+  line-height: 1.62;
+  color: var(--qm-text-secondary);
+  letter-spacing: 0.015em;
   margin: 0;
-  max-height: 8.5em;
+  max-height: 9.5em;
   overflow-y: auto;
 }
 
-// Staggered fade-in animations
 .fade-in {
   animation: fade-in 0.8s ease-out forwards;
   opacity: 0;
