@@ -1,9 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# --- Optional: validation mode -------------------------------------
+# Run `./start-kiosk.sh --validate "Avery Broderick"` to keep the
+# webcam preview + thumbs-up gesture intact, but feed the face model
+# a noisy version of model/data/raw_images/<name>.jpg instead of the
+# user's actual face. Useful for demoing the pipeline with a known
+# expected match. Noise level: VALIDATE_NOISE=mild|harsh (default harsh).
+# ------------------------------------------------------------------
+
+VALIDATE_NAME=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --validate)
+      VALIDATE_NAME="${2:-}"
+      shift 2
+      ;;
+    *)
+      echo "unknown arg: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+export VALIDATE_NAME
+
 LOG=/tmp/kiosk.log
 exec > >(tee -a "$LOG") 2>&1
-echo "=== start-kiosk.sh $(date) ==="
+echo "=== start-kiosk.sh $(date) VALIDATE_NAME=${VALIDATE_NAME:-<none>} ==="
 set -x
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
