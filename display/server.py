@@ -8,6 +8,7 @@ from thumbs_up_detect import ThumbsUpDetector
 from validation_loop import load_validation_frame
 
 import json
+import os
 import time
 import queue
 import asyncio
@@ -44,6 +45,9 @@ DB_DIR = REPO_ROOT / "model" / "data"
 DB_EMBEDDINGS_PATH = DB_DIR / "embeddings.npy"
 DB_NAMES_PATH = DB_DIR / "names.json"
 DB_PROFILES_PATH = DB_DIR / "profiles.json"
+PERF_LOG_DIR = REPO_ROOT / "display" / "perf_logs"
+PERF_LOG_DIR.mkdir(parents=True, exist_ok=True)
+PERF_LOG_PATH = PERF_LOG_DIR / f"server_perf_{time.strftime('%Y%m%d_%H%M%S')}.jsonl"
 
 event_queue: queue.Queue = queue.Queue()
 # Latest JPEG frame from camera_loop; broadcast_event always sends the newest
@@ -51,6 +55,7 @@ event_queue: queue.Queue = queue.Queue()
 latest_frame: bytes | None = None
 frame_lock = threading.Lock()
 active_websocket: WebSocket | None = None
+perf_log_lock = threading.Lock()
 
 # Mutated only by the WebSocket handler (single writer); read by camera_loop.
 current_state: str = "idle"
@@ -62,6 +67,31 @@ face_collector = None  # type: FaceCollector | None
 # camera_loop substitutes it for the live webcam frame in the face-inference
 # step only — webcam preview + thumbs-up detection still use the real frame.
 validation_frame: np.ndarray | None = None
+
+
+def _ts_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
+def write_perf_log(kind: str, **fields) -> None:
+    record = {"ts": _ts_iso(), "kind": kind, **fields}
+    line = json.dumps(record, ensure_ascii=True)
+    with perf_log_lock:
+        with PERF_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(line)
+            f.write("\n")
+
+
+def enqueue_event(event: dict, source: str) -> None:
+    event_queue.put(event)
+    write_perf_log(
+        "event_queued",
+        source=source,
+        state=current_state,
+        event_type=event.get("type"),
+        event=event,
+        queue_size=event_queue.qsize(),
+    )
 
 
 def resize_frame(frame: np.ndarray, width: int, height: int) -> np.ndarray:
@@ -143,6 +173,7 @@ class FaceCollector:
 def load_face_database() -> tuple[np.ndarray, list[str], dict]:
     if not (DB_EMBEDDINGS_PATH.exists() and DB_NAMES_PATH.exists()):
         print(f"WARN: face DB not found at {DB_DIR}; matching will return empty.")
+        write_perf_log("face_db_missing", db_dir=str(DB_DIR))
         return np.zeros((0, 512), dtype=np.float32), [], {}
 
     embeddings = np.load(DB_EMBEDDINGS_PATH)
@@ -155,6 +186,12 @@ def load_face_database() -> tuple[np.ndarray, list[str], dict]:
             profiles = json.load(f)
 
     print(f"Loaded face DB: {len(names)} identities, {len(profiles)} profiles.")
+    write_perf_log(
+        "face_db_loaded",
+        identities=len(names),
+        profiles=len(profiles),
+        embeddings_shape=list(embeddings.shape),
+    )
     return embeddings, names, profiles
 
 
@@ -168,7 +205,27 @@ def camera_loop():
     cap.set(cv2.CAP_PROP_FPS, 30)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     if not cap.isOpened():
+        write_perf_log("camera_open_failed", camera_index=LOCAL_CAMERA_IDX)
         raise RuntimeError("Could not open webcam")
+
+    write_perf_log(
+        "camera_opened",
+        camera_index=LOCAL_CAMERA_IDX,
+        requested={
+            "width": FRAME_WIDTH,
+            "height": FRAME_HEIGHT,
+            "fps": 30,
+            "fourcc": "MJPG",
+            "buffer_size": 1,
+        },
+        actual={
+            "width": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+            "fps": cap.get(cv2.CAP_PROP_FPS),
+            "fourcc": int(cap.get(cv2.CAP_PROP_FOURCC)),
+            "buffer_size": cap.get(cv2.CAP_PROP_BUFFERSIZE),
+        },
+    )
 
     # Per-stage timing accumulators (ms), flushed to stdout every PERF_LOG_EVERY frames.
     PERF_LOG_EVERY = 30
@@ -199,7 +256,7 @@ def camera_loop():
             triggered = thumbs_detector.process_frame(thumbs_frame, ts_ms)
             gesture_ms = (time.perf_counter() - t0) * 1000.0
             if triggered:
-                event_queue.put({"type": "thumbs_up_detected"})
+                enqueue_event({"type": "thumbs_up_detected"}, source="thumbs_detector")
                 thumbs_detector.reset()
         elif state == "camera" and face_collector is not None:
             face_input = validation_frame if validation_frame is not None else frame
@@ -207,7 +264,7 @@ def camera_loop():
             event = face_collector.process_frame(face_input)
             face_ms = (time.perf_counter() - t0) * 1000.0
             if event is not None:
-                event_queue.put(event)
+                enqueue_event(event, source="face_collector")
 
         t0 = time.perf_counter()
         stream_frame = resize_frame(frame, STREAM_WIDTH, STREAM_HEIGHT)
@@ -237,13 +294,13 @@ def camera_loop():
             avg = {k: v / perf_frames for k, v in perf.items()}
             fps = 1000.0 / avg["total"] if avg["total"] > 0 else 0.0
             qsize = event_queue.qsize()
-            print(
-                f"[perf] n={perf_frames} states={perf_state_counts} "
-                f"read={avg['read']:.1f} gesture={avg['gesture']:.1f} "
-                f"face={avg['face']:.1f} encode={avg['encode']:.1f} "
-                f"enqueue={avg['enqueue']:.1f} total={avg['total']:.1f}ms "
-                f"(~{fps:.1f} fps)  qsize={qsize}",
-                flush=True,
+            write_perf_log(
+                "perf_summary",
+                frames=perf_frames,
+                states=perf_state_counts,
+                avg_ms=avg,
+                fps=fps,
+                queue_size=qsize,
             )
             for k in perf:
                 perf[k] = 0.0
@@ -263,6 +320,12 @@ async def broadcast_event():
                     break
                 if active_websocket is not None:
                     await active_websocket.send_json(event)
+                    write_perf_log(
+                        "event_sent",
+                        transport="json",
+                        state=current_state,
+                        event_type=event.get("type"),
+                    )
 
             # Then grab + clear the newest frame; any older frame has already
             # been overwritten by camera_loop, which is exactly what we want.
@@ -276,6 +339,7 @@ async def broadcast_event():
                 await active_websocket.send_bytes(frame_to_send)
         except Exception as exc:
             print(f"broadcast_event: {exc}")
+            write_perf_log("broadcast_exception", error=str(exc))
         await asyncio.sleep(0.01)
 
 
@@ -283,26 +347,36 @@ def _apply_state_change(new_state: str):
     """Reset the detector for the state we're entering, then update current_state.
     Reset before the swap so camera_loop never sees a stale detector."""
     global current_state
+    old_state = current_state
     if new_state == "idle" and thumbs_detector is not None:
         thumbs_detector.reset()
     elif new_state == "camera" and face_collector is not None:
         face_collector.reset()
     current_state = new_state
+    write_perf_log("state_change", old_state=old_state, new_state=new_state)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global thumbs_detector, face_collector
+    print(f"Perf log file: {PERF_LOG_PATH}", flush=True)
+    write_perf_log("server_start", perf_log_path=str(PERF_LOG_PATH))
     db_embeddings, db_names, profiles = load_face_database()
     face_collector = FaceCollector(db_embeddings, db_names, profiles)
     thumbs_detector = ThumbsUpDetector()
 
     global validation_frame
     validation_frame = load_validation_frame(RAW_IMAGES_DIR)
+    write_perf_log(
+        "validation_frame_loaded",
+        enabled=validation_frame is not None,
+        validate_name=os.environ.get("VALIDATE_NAME") if validation_frame is not None else None,
+    )
 
     threading.Thread(target=camera_loop, daemon=True).start()
     asyncio.create_task(broadcast_event())
     yield
+    write_perf_log("server_stop")
 
 
 app = FastAPI(title="Quantum Mirror", lifespan=lifespan)
@@ -325,6 +399,7 @@ async def websocket_camera(websocket: WebSocket):
     global active_websocket
     await websocket.accept()
     active_websocket = websocket
+    write_perf_log("websocket_connected", client=str(websocket.client))
     try:
         while True:
             msg = await websocket.receive_json()
@@ -333,14 +408,17 @@ async def websocket_camera(websocket: WebSocket):
             if msg.get("type") == "state_change":
                 new_state = msg.get("state")
                 if new_state in ("idle", "camera", "output"):
+                    write_perf_log("state_change_requested", requested_state=new_state, payload=msg)
                     _apply_state_change(new_state)
     except WebSocketDisconnect:
-        pass
+        write_perf_log("websocket_disconnected", reason="disconnect")
     except Exception as exc:
         print(f"websocket_camera: {exc}")
+        write_perf_log("websocket_exception", error=str(exc))
     finally:
         if active_websocket is websocket:
             active_websocket = None
+        write_perf_log("websocket_closed")
 
 
 if RAW_IMAGES_DIR.exists():

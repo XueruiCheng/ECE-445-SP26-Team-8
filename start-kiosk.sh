@@ -52,6 +52,8 @@ read W H < <(xrandr | awk -v out="$OUTPUT" '$1==out && $2=="connected" {
 xset s off
 xset -dpms
 xset s noblank
+# Make the X root window black so there is no white flash before Chromium paints.
+xsetroot -solid black || true
 
 cd "$REPO_DIR/display/frontend"
 npm start -- --host 0.0.0.0 --port 4200 &
