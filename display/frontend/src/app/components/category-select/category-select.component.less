@@ -1,0 +1,175 @@
+@neon-cyan: #00f0ff;
+
+.category-screen {
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.grid-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at center, rgba(0, 240, 255, 0.08), transparent 55%),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 56px,
+      rgba(0, 240, 255, 0.03) 56px,
+      rgba(0, 240, 255, 0.03) 57px
+    ),
+    repeating-linear-gradient(
+      180deg,
+      transparent 0,
+      transparent 56px,
+      rgba(0, 240, 255, 0.03) 56px,
+      rgba(0, 240, 255, 0.03) 57px
+    );
+  opacity: 0.55;
+}
+
+.content-shell {
+  position: relative;
+  z-index: 1;
+  width: min(92vw, 1100px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+}
+
+.label {
+  font-size: 0.62rem;
+  letter-spacing: 0.4em;
+  color: rgba(0, 240, 255, 0.58);
+}
+
+.headline {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 900;
+  font-size: clamp(1.8rem, 4.4vw, 2.8rem);
+  color: @neon-cyan;
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 18px rgba(0, 240, 255, 0.55);
+  margin: 0;
+}
+
+.subhead {
+  font-size: 0.7rem;
+  letter-spacing: 0.32em;
+  color: rgba(255, 255, 255, 0.44);
+  margin: 0 0 1.6rem;
+}
+
+.card-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: stretch;
+  gap: clamp(20px, 3vw, 36px);
+  margin-top: 0.4rem;
+}
+
+.category-card {
+  width: clamp(180px, 18vw, 240px);
+  height: clamp(220px, 22vw, 280px);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  background:
+    linear-gradient(180deg, rgba(0, 240, 255, 0.04), rgba(0, 240, 255, 0.015) 60%, rgba(0, 0, 0, 0.4)),
+    radial-gradient(circle at top, rgba(0, 240, 255, 0.06), transparent 60%);
+  box-shadow:
+    0 0 18px rgba(0, 240, 255, 0.12),
+    inset 0 0 24px rgba(0, 240, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+  padding: 1.4rem 1rem;
+  position: relative;
+  transition: border-color 220ms ease-out, box-shadow 220ms ease-out;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 1px solid rgba(0, 240, 255, 0.55);
+  }
+  &::before {
+    top: 8px;
+    left: 8px;
+    border-right: none;
+    border-bottom: none;
+  }
+  &::after {
+    bottom: 8px;
+    right: 8px;
+    border-left: none;
+    border-top: none;
+  }
+
+  .glyph {
+    font-size: clamp(2.2rem, 3.2vw, 3rem);
+    color: @neon-cyan;
+    text-shadow: 0 0 14px rgba(0, 240, 255, 0.55);
+    line-height: 1;
+  }
+
+  .card-name {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    font-size: 0.92rem;
+    letter-spacing: 0.3em;
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  .card-tag {
+    font-size: 0.58rem;
+    letter-spacing: 0.36em;
+    color: rgba(0, 240, 255, 0.55);
+  }
+
+  &.highlighted {
+    border-color: rgba(0, 240, 255, 0.95);
+    box-shadow:
+      0 0 40px rgba(0, 240, 255, 0.7),
+      inset 0 0 30px rgba(0, 240, 255, 0.12);
+    animation: card-flash 400ms ease-out;
+  }
+}
+
+.prompt {
+  margin-top: 1.8rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.36em;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+@keyframes card-flash {
+  0% {
+    box-shadow:
+      0 0 18px rgba(0, 240, 255, 0.12),
+      inset 0 0 24px rgba(0, 240, 255, 0.04);
+    border-color: rgba(0, 240, 255, 0.25);
+  }
+  40% {
+    box-shadow:
+      0 0 60px rgba(0, 240, 255, 0.95),
+      inset 0 0 40px rgba(0, 240, 255, 0.25);
+    border-color: rgba(0, 240, 255, 1);
+  }
+  100% {
+    box-shadow:
+      0 0 40px rgba(0, 240, 255, 0.7),
+      inset 0 0 30px rgba(0, 240, 255, 0.12);
+    border-color: rgba(0, 240, 255, 0.95);
+  }
+}

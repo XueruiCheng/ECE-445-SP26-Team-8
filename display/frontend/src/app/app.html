@@ -3,6 +3,9 @@
     @case (MirrorState.IDLE) {
       <app-idle class="state-view" />
     }
+    @case (MirrorState.CATEGORY_SELECT) {
+      <app-category-select class="state-view" />
+    }
     @case (MirrorState.CAMERA) {
       <app-camera class="state-view" />
     }

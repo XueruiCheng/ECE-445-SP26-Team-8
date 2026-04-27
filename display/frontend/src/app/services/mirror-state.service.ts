@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { MirrorState, MatchResult } from '../models/mirror-state.model';
+import { MirrorState, MatchResult, Category } from '../models/mirror-state.model';
 import { WebSocketService, WsEvent } from './websocket.service';
 
 export interface CollectingProgress {
@@ -26,12 +26,16 @@ export class MirrorStateService {
   private matchResultSubject = new BehaviorSubject<MatchResult | null>(null);
   private collectingSubject = new BehaviorSubject<CollectingProgress | null>(null);
   private faceErrorSubject = new BehaviorSubject<FaceError | null>(null);
+  private selectedCategorySubject = new BehaviorSubject<Category | null>(null);
+  private highlightedCategorySubject = new BehaviorSubject<Category | null>(null);
   private outputTimer: ReturnType<typeof setTimeout> | null = null;
 
   state$ = this.stateSubject.asObservable();
   matchResult$ = this.matchResultSubject.asObservable();
   collecting$ = this.collectingSubject.asObservable();
   faceError$ = this.faceErrorSubject.asObservable();
+  selectedCategory$ = this.selectedCategorySubject.asObservable();
+  highlightedCategory$ = this.highlightedCategorySubject.asObservable();
 
   get currentState(): MirrorState {
     return this.stateSubject.value;
@@ -48,7 +52,19 @@ export class MirrorStateService {
     this.matchResultSubject.next(null);
     this.collectingSubject.next(null);
     this.faceErrorSubject.next(null);
+    this.selectedCategorySubject.next(null);
+    this.highlightedCategorySubject.next(null);
     this.transition(MirrorState.IDLE);
+  }
+
+  goToCategorySelect(): void {
+    this.clearOutputTimer();
+    this.matchResultSubject.next(null);
+    this.collectingSubject.next(null);
+    this.faceErrorSubject.next(null);
+    this.selectedCategorySubject.next(null);
+    this.highlightedCategorySubject.next(null);
+    this.transition(MirrorState.CATEGORY_SELECT);
   }
 
   goToCamera(): void {
@@ -88,7 +104,16 @@ export class MirrorStateService {
     switch (event.type) {
       case 'thumbs_up_detected':
         if (this.currentState === MirrorState.IDLE) {
-          this.goToCamera();
+          this.goToCategorySelect();
+        }
+        break;
+
+      case 'category_selected':
+        if (this.currentState === MirrorState.CATEGORY_SELECT) {
+          const cat = String(event['category'] ?? '') as Category;
+          this.selectedCategorySubject.next(cat);
+          this.highlightedCategorySubject.next(cat);
+          setTimeout(() => this.goToCamera(), 400);
         }
         break;
 

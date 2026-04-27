@@ -34,12 +34,12 @@ import { apiUrl } from '../../services/websocket.service';
               }
             </div>
 
-            <div class="video-placeholder fade-in-delay-4">
-              <div class="video-frame">
-                <div class="play-icon">&#9654;</div>
-                <div class="video-label">VIDEO PROFILE</div>
+            @if (result.summary) {
+              <div class="summary-block fade-in-delay-4">
+                <div class="summary-label">SUMMARY</div>
+                <p class="summary-text">{{ result.summary }}</p>
               </div>
-            </div>
+            }
           </div>
         </div>
       </div>

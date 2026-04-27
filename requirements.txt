@@ -7,3 +7,4 @@ onnxruntime
 mediapipe
 fastapi
 uvicorn
+bleak>=0.21

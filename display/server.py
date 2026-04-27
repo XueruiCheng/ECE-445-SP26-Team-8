@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from face_match import find_top_matches
 from thumbs_up_detect import ThumbsUpDetector
 from validation_loop import load_validation_frame
+import ble_client
 
 import json
 import os
@@ -69,6 +70,10 @@ current_state: str = "idle"
 state_version = 0
 state_lock = threading.Lock()
 
+selected_category: str | None = None
+selected_category_lock = threading.Lock()
+category_masks: dict[str, np.ndarray] = {}
+
 thumbs_detector: ThumbsUpDetector | None = None
 face_collector = None  # type: FaceCollector | None
 validation_frame: np.ndarray | None = None
@@ -115,6 +120,17 @@ def enqueue_event(event: dict, source: str) -> None:
 def get_state_snapshot() -> tuple[str, int]:
     with state_lock:
         return current_state, state_version
+
+
+def get_selected_category() -> str | None:
+    with selected_category_lock:
+        return selected_category
+
+
+def set_selected_category(cat: str | None) -> None:
+    global selected_category
+    with selected_category_lock:
+        selected_category = cat
 
 
 def publish_analysis_frame(frame: np.ndarray) -> None:
@@ -200,12 +216,19 @@ def resize_frame(frame: np.ndarray, width: int, height: int) -> np.ndarray:
 class FaceCollector:
     """Builds face embeddings and emits a match_result enriched from profiles.json."""
 
-    def __init__(self, db_embeddings: np.ndarray, db_names: list[str], profiles: dict):
+    def __init__(
+        self,
+        db_embeddings: np.ndarray,
+        db_names: list[str],
+        profiles: dict,
+        category_masks: dict[str, np.ndarray],
+    ):
         self.face_model = insightface.app.FaceAnalysis(name="buffalo_l")
         self.face_model.prepare(ctx_id=0, det_size=(320, 320))
         self.db_embeddings = db_embeddings
         self.db_names = db_names
         self.profiles = profiles
+        self.category_masks = category_masks
 
     def reset(self):
         return None
@@ -220,6 +243,8 @@ class FaceCollector:
             "research_areas": profile.get("research_areas", []),
             "image_url": f"/images/{name}.jpg",
             "profile_url": profile.get("profile_url", ""),
+            "summary": profile.get("summary", ""),
+            "category": profile.get("category", ""),
         }
 
     def extract_embedding(self, frame) -> tuple[np.ndarray | None, dict | None]:
@@ -239,24 +264,35 @@ class FaceCollector:
 
         return face.embedding, None
 
-    def match_embeddings(self, embeddings: list[np.ndarray]) -> dict:
+    def match_embeddings(self, embeddings: list[np.ndarray], category: str | None = None) -> dict:
         avg_embedding = np.mean(embeddings, axis=0)
 
         if len(self.db_embeddings) == 0:
             return {"type": "match_result", "matches": []}
 
-        raw = find_top_matches(avg_embedding, self.db_embeddings, self.db_names, n=3)
+        if category and category in self.category_masks:
+            mask = self.category_masks[category]
+            emb_subset = self.db_embeddings[mask]
+            names_subset = [n for n, m in zip(self.db_names, mask) if m]
+        else:
+            emb_subset = self.db_embeddings
+            names_subset = self.db_names
+
+        if len(emb_subset) == 0:
+            return {"type": "match_result", "matches": []}
+
+        raw = find_top_matches(avg_embedding, emb_subset, names_subset, n=3)
         return {
             "type": "match_result",
             "matches": [self._enrich(name, score) for name, score in raw],
         }
 
 
-def load_face_database() -> tuple[np.ndarray, list[str], dict]:
+def load_face_database() -> tuple[np.ndarray, list[str], dict, dict[str, np.ndarray]]:
     if not (DB_EMBEDDINGS_PATH.exists() and DB_NAMES_PATH.exists()):
         print(f"WARN: face DB not found at {DB_DIR}; matching will return empty.")
         write_perf_log("face_db_missing", db_dir=str(DB_DIR))
-        return np.zeros((0, 512), dtype=np.float32), [], {}
+        return np.zeros((0, 512), dtype=np.float32), [], {}, {}
 
     embeddings = np.load(DB_EMBEDDINGS_PATH)
     with open(DB_NAMES_PATH, "r", encoding="utf-8") as f:
@@ -267,14 +303,23 @@ def load_face_database() -> tuple[np.ndarray, list[str], dict]:
         with open(DB_PROFILES_PATH, "r", encoding="utf-8") as f:
             profiles = json.load(f)
 
-    print(f"Loaded face DB: {len(names)} identities, {len(profiles)} profiles.")
+    masks: dict[str, np.ndarray] = {}
+    for cat in ("scientist", "engineer", "entrepreneur"):
+        masks[cat] = np.array(
+            [profiles.get(n, {}).get("category") == cat for n in names],
+            dtype=bool,
+        )
+
+    mask_counts = {cat: int(m.sum()) for cat, m in masks.items()}
+    print(f"Loaded face DB: {len(names)} identities, {len(profiles)} profiles. Categories: {mask_counts}")
     write_perf_log(
         "face_db_loaded",
         identities=len(names),
         profiles=len(profiles),
         embeddings_shape=list(embeddings.shape),
+        category_counts=mask_counts,
     )
-    return embeddings, names, profiles
+    return embeddings, names, profiles, masks
 
 
 def camera_loop():
@@ -450,8 +495,11 @@ def analysis_loop():
             current, current_version = get_state_snapshot()
             if current == "inference" and current_version == version:
                 if len(embeddings) >= FRAMES_TO_COLLECT:
+                    cat = get_selected_category()
                     with detector_lock:
-                        event = face_collector.match_embeddings(embeddings[:FRAMES_TO_COLLECT])
+                        event = face_collector.match_embeddings(
+                            embeddings[:FRAMES_TO_COLLECT], category=cat
+                        )
                     enqueue_event(event, source="face_collector")
                 else:
                     enqueue_event(
@@ -539,17 +587,19 @@ def _apply_state_change(new_state: str):
         reset_capture_session()
     elif new_state in ("idle", "output"):
         reset_capture_session()
+    if new_state == "idle":
+        set_selected_category(None)
     write_perf_log("state_change", old_state=old_state, new_state=new_state)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global thumbs_detector, face_collector, validation_frame
+    global thumbs_detector, face_collector, validation_frame, category_masks
     print(f"Perf log file: {PERF_LOG_PATH}", flush=True)
     write_perf_log("server_start", perf_log_path=str(PERF_LOG_PATH))
 
-    db_embeddings, db_names, profiles = load_face_database()
-    face_collector = FaceCollector(db_embeddings, db_names, profiles)
+    db_embeddings, db_names, profiles, category_masks = load_face_database()
+    face_collector = FaceCollector(db_embeddings, db_names, profiles, category_masks)
     thumbs_detector = ThumbsUpDetector()
 
     validation_frame = load_validation_frame(RAW_IMAGES_DIR)
@@ -561,6 +611,7 @@ async def lifespan(app: FastAPI):
 
     threading.Thread(target=camera_loop, daemon=True).start()
     threading.Thread(target=analysis_loop, daemon=True).start()
+    threading.Thread(target=ble_client.run, daemon=True).start()
     asyncio.create_task(broadcast_event())
     yield
     write_perf_log("server_stop")
@@ -594,7 +645,7 @@ async def websocket_camera(websocket: WebSocket):
                 continue
             if msg.get("type") == "state_change":
                 new_state = msg.get("state")
-                if new_state in ("idle", "camera", "inference", "output"):
+                if new_state in ("idle", "category_select", "camera", "inference", "output"):
                     write_perf_log("state_change_requested", requested_state=new_state, payload=msg)
                     _apply_state_change(new_state)
     except WebSocketDisconnect:
