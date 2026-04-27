@@ -1,9 +1,12 @@
 import {
+  AfterViewInit,
   Component,
   ChangeDetectionStrategy,
+  ElementRef,
   inject,
   signal,
   OnDestroy,
+  ViewChild,
 } from '@angular/core';
 import { AsyncPipe } from '@angular/common';
 import { Subscription } from 'rxjs';
@@ -25,9 +28,8 @@ import { MirrorStateService } from '../../services/mirror-state.service';
 
         <div class="feed-area">
           <div class="scan-line"></div>
-          @if (frameUrl(); as url) {
-            <img class="feed-img" [src]="url" alt="camera feed" />
-          } @else {
+          <canvas #feedCanvas class="feed-canvas" [class.visible]="hasFrame()"></canvas>
+          @if (!hasFrame()) {
             <div class="feed-placeholder">
               <div class="crosshair"></div>
             </div>
@@ -60,29 +62,85 @@ import { MirrorStateService } from '../../services/mirror-state.service';
   `,
   styleUrl: './camera.component.less',
 })
-export class CameraComponent implements OnDestroy {
+export class CameraComponent implements AfterViewInit, OnDestroy {
   private webSocket = inject(WebSocketService);
   mirrorState = inject(MirrorStateService);
 
-  readonly frameUrl = signal<string | null>(null);
+  @ViewChild('feedCanvas')
+  private canvasRef?: ElementRef<HTMLCanvasElement>;
+
+  readonly hasFrame = signal(false);
   private framesSub: Subscription;
-  private previousUrl: string | null = null;
+  private canvasContext: CanvasRenderingContext2D | null = null;
+  private pendingBlob: Blob | null = null;
+  private decodeInFlight = false;
+  private destroyed = false;
 
   constructor() {
     this.framesSub = this.webSocket.frames$.subscribe((blob) => {
-      const url = URL.createObjectURL(blob);
-      const prev = this.previousUrl;
-      this.previousUrl = url;
-      this.frameUrl.set(url);
-      if (prev) URL.revokeObjectURL(prev);
+      this.pendingBlob = blob;
+      if (!this.decodeInFlight) {
+        void this.flushLatestFrame();
+      }
     });
   }
 
-  ngOnDestroy(): void {
-    this.framesSub.unsubscribe();
-    if (this.previousUrl) {
-      URL.revokeObjectURL(this.previousUrl);
-      this.previousUrl = null;
+  ngAfterViewInit(): void {
+    const canvas = this.canvasRef?.nativeElement;
+    if (!canvas) return;
+
+    this.canvasContext = canvas.getContext('2d', {
+      alpha: false,
+      desynchronized: true,
+    });
+
+    if (this.pendingBlob && !this.decodeInFlight) {
+      void this.flushLatestFrame();
     }
+  }
+
+  ngOnDestroy(): void {
+    this.destroyed = true;
+    this.framesSub.unsubscribe();
+  }
+
+  private async flushLatestFrame(): Promise<void> {
+    if (this.decodeInFlight || !this.pendingBlob) return;
+
+    const blob = this.pendingBlob;
+    this.pendingBlob = null;
+    this.decodeInFlight = true;
+
+    try {
+      const bitmap = await createImageBitmap(blob);
+      try {
+        if (!this.destroyed) {
+          this.drawBitmap(bitmap);
+          this.hasFrame.set(true);
+        }
+      } finally {
+        bitmap.close();
+      }
+    } catch {
+      // Ignore corrupt or incomplete frames and keep streaming.
+    } finally {
+      this.decodeInFlight = false;
+      if (this.pendingBlob && !this.destroyed) {
+        void this.flushLatestFrame();
+      }
+    }
+  }
+
+  private drawBitmap(bitmap: ImageBitmap): void {
+    const canvas = this.canvasRef?.nativeElement;
+    const ctx = this.canvasContext;
+    if (!canvas || !ctx) return;
+
+    if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+    }
+
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   }
 }

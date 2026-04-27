@@ -29,6 +29,12 @@ LOCAL_CAMERA_IDX = 0
 
 FRAME_WIDTH = 1280
 FRAME_HEIGHT = 720
+STREAM_WIDTH = 640
+STREAM_HEIGHT = 360
+THUMBS_WIDTH = 320
+THUMBS_HEIGHT = 180
+FACE_WIDTH = 640
+FACE_HEIGHT = 360
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DIST_DIR = REPO_ROOT / "display" / "frontend" / "dist" / "frontend" / "browser"
@@ -56,6 +62,12 @@ face_collector = None  # type: FaceCollector | None
 # camera_loop substitutes it for the live webcam frame in the face-inference
 # step only — webcam preview + thumbs-up detection still use the real frame.
 validation_frame: np.ndarray | None = None
+
+
+def resize_frame(frame: np.ndarray, width: int, height: int) -> np.ndarray:
+    if frame.shape[1] == width and frame.shape[0] == height:
+        return frame
+    return cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
 
 
 class FaceCollector:
@@ -92,6 +104,7 @@ class FaceCollector:
         if self._frame_count % INFERENCE_EVERY_N_FRAMES != 0:
             return None
 
+        frame = resize_frame(frame, FACE_WIDTH, FACE_HEIGHT)
         faces = self.face_model.get(frame)
 
         if len(faces) != 1:
@@ -157,8 +170,6 @@ def camera_loop():
     if not cap.isOpened():
         raise RuntimeError("Could not open webcam")
 
-    frame_count = 0
-
     # Per-stage timing accumulators (ms), flushed to stdout every PERF_LOG_EVERY frames.
     PERF_LOG_EVERY = 30
     perf = {"read": 0.0, "gesture": 0.0, "face": 0.0, "encode": 0.0, "enqueue": 0.0, "total": 0.0}
@@ -176,10 +187,6 @@ def camera_loop():
 
         frame = cv2.flip(frame, 1)
 
-        frame_count += 1
-        if frame_count % 3 != 0:
-            continue
-
         ts_ms = int(time.monotonic() * 1000)
         state = current_state
 
@@ -188,7 +195,8 @@ def camera_loop():
 
         if state == "idle" and thumbs_detector is not None:
             t0 = time.perf_counter()
-            triggered = thumbs_detector.process_frame(frame, ts_ms)
+            thumbs_frame = resize_frame(frame, THUMBS_WIDTH, THUMBS_HEIGHT)
+            triggered = thumbs_detector.process_frame(thumbs_frame, ts_ms)
             gesture_ms = (time.perf_counter() - t0) * 1000.0
             if triggered:
                 event_queue.put({"type": "thumbs_up_detected"})
@@ -202,7 +210,8 @@ def camera_loop():
                 event_queue.put(event)
 
         t0 = time.perf_counter()
-        ok, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
+        stream_frame = resize_frame(frame, STREAM_WIDTH, STREAM_HEIGHT)
+        ok, buffer = cv2.imencode('.jpg', stream_frame, [cv2.IMWRITE_JPEG_QUALITY, 55])
         encode_ms = (time.perf_counter() - t0) * 1000.0
 
         enqueue_ms = 0.0

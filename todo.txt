@@ -4,4 +4,4 @@
 4. Still using a fake dataset, and need some sort of veriifcation or proof of classificationa accuracy
    this can be done by adding our own images and seeing if they will be matched with
 6. Change the hand gesture our cv is looking for
-5. Find the menu information display to disable the "no input signal" and disable it
+7. Find a better final output
