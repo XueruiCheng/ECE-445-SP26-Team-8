@@ -14,7 +14,7 @@ export class WebSocketService implements OnDestroy {
   private destroyed = false;
   private pendingStateOnConnect: string | null = null;
 
-  readonly frames$ = new Subject<Blob>();
+  readonly frames$ = new BehaviorSubject<Blob | null>(null);
   readonly events$ = new Subject<WsEvent>();
   readonly connected$ = new BehaviorSubject<boolean>(false);
 

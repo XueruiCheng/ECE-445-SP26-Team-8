@@ -6,6 +6,9 @@ import { WebSocketService, WsEvent } from './websocket.service';
 export interface CollectingProgress {
   progress: number;
   total: number;
+  ready?: boolean;
+  captured?: number;
+  required?: number;
 }
 
 export interface FaceError {
@@ -55,6 +58,13 @@ export class MirrorStateService {
     this.transition(MirrorState.CAMERA);
   }
 
+  goToInference(): void {
+    this.clearOutputTimer();
+    this.collectingSubject.next(null);
+    this.faceErrorSubject.next(null);
+    this.transition(MirrorState.INFERENCE);
+  }
+
   goToOutput(result: MatchResult): void {
     this.matchResultSubject.next(result);
     this.transition(MirrorState.OUTPUT);
@@ -85,24 +95,33 @@ export class MirrorStateService {
       case 'collecting':
         if (this.currentState === MirrorState.CAMERA) {
           this.faceErrorSubject.next(null);
-          this.collectingSubject.next({
+          const collecting = {
             progress: Number(event['progress'] ?? 0),
             total: Number(event['total'] ?? 0),
-          });
+            ready: Boolean(event['ready']),
+            captured: Number(event['captured'] ?? 0),
+            required: Number(event['required'] ?? 0),
+          };
+          this.collectingSubject.next(collecting);
+          if (collecting.ready) {
+            this.goToInference();
+          }
         }
         break;
 
       case 'face_error':
-        if (this.currentState === MirrorState.CAMERA) {
+        if (this.currentState === MirrorState.CAMERA || this.currentState === MirrorState.INFERENCE) {
           this.faceErrorSubject.next({
             reason: String(event['reason'] ?? ''),
             count: Number(event['count'] ?? 0),
           });
+          this.collectingSubject.next(null);
+          setTimeout(() => this.goToIdle(), 2500);
         }
         break;
 
       case 'match_result':
-        if (this.currentState === MirrorState.CAMERA) {
+        if (this.currentState === MirrorState.CAMERA || this.currentState === MirrorState.INFERENCE) {
           const matches = event['matches'] as MatchResult[] | undefined;
           if (matches && matches.length > 0) {
             this.goToOutput(matches[0]);

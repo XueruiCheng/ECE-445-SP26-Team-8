@@ -1,6 +1,7 @@
 export enum MirrorState {
   IDLE = 'idle',
   CAMERA = 'camera',
+  INFERENCE = 'inference',
   OUTPUT = 'output'
 }
 

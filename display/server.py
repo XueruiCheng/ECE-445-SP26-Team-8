@@ -13,6 +13,7 @@ import time
 import queue
 import asyncio
 import threading
+from dataclasses import dataclass, field
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -21,10 +22,14 @@ import numpy as np
 import insightface
 
 # config globals
-WARMUP_FRAMES = 60
 MIN_DET_SCORE = 0.7
 FRAMES_TO_COLLECT = 6
-LOGITECH_RASP_CAMERA_IDX = '/dev/video0'
+RAW_FRAMES_TO_CAPTURE = 10
+CAMERA_SCAN_SECONDS = 5.0
+CAMERA_PROGRESS_TOTAL_MS = int(CAMERA_SCAN_SECONDS * 1000)
+CAMERA_CAPTURE_INTERVAL_SECONDS = CAMERA_SCAN_SECONDS / RAW_FRAMES_TO_CAPTURE
+CAMERA_PROGRESS_EMIT_MS = 100
+LOGITECH_RASP_CAMERA_IDX = "/dev/video0"
 LOCAL_CAMERA_IDX = 0
 
 FRAME_WIDTH = 1280
@@ -49,8 +54,6 @@ PERF_LOG_DIR.mkdir(parents=True, exist_ok=True)
 PERF_LOG_PATH = PERF_LOG_DIR / f"server_perf_{time.strftime('%Y%m%d_%H%M%S')}.jsonl"
 
 event_queue: queue.Queue = queue.Queue()
-# Latest JPEG frame from camera_loop; broadcast_event always sends the newest
-# and discards any frame that arrived while the previous one was in flight.
 latest_frame: bytes | None = None
 frame_lock = threading.Lock()
 active_websocket: WebSocket | None = None
@@ -60,19 +63,28 @@ detector_lock = threading.Lock()
 analysis_frame: np.ndarray | None = None
 analysis_frame_seq = 0
 analysis_lock = threading.Lock()
+session_lock = threading.Lock()
 
-# Mutated only by the WebSocket handler (single writer); read by camera_loop.
 current_state: str = "idle"
 state_version = 0
 state_lock = threading.Lock()
 
 thumbs_detector: ThumbsUpDetector | None = None
 face_collector = None  # type: FaceCollector | None
-
-# When VALIDATE_NAME is set, this holds a noisy version of the named DB image.
-# camera_loop substitutes it for the live webcam frame in the face-inference
-# step only — webcam preview + thumbs-up detection still use the real frame.
 validation_frame: np.ndarray | None = None
+
+
+@dataclass
+class CaptureSession:
+    started_at: float | None = None
+    last_capture_at: float = 0.0
+    last_progress_bucket: int = -1
+    captured_frames: list[np.ndarray] = field(default_factory=list)
+    ready_emitted: bool = False
+    inference_processed: bool = False
+
+
+capture_session = CaptureSession()
 
 
 def _ts_iso() -> str:
@@ -120,6 +132,65 @@ def take_latest_analysis_frame(last_seq: int) -> tuple[np.ndarray | None, int, i
         return analysis_frame, analysis_frame_seq, dropped
 
 
+def reset_capture_session() -> None:
+    global capture_session
+    with session_lock:
+        capture_session = CaptureSession()
+
+
+def update_camera_session(frame: np.ndarray) -> dict | None:
+    global capture_session
+    now = time.monotonic()
+
+    with session_lock:
+        if capture_session.started_at is None:
+            capture_session.started_at = now
+            capture_session.last_capture_at = now - CAMERA_CAPTURE_INTERVAL_SECONDS
+
+        if (
+            len(capture_session.captured_frames) < RAW_FRAMES_TO_CAPTURE
+            and now - capture_session.last_capture_at >= CAMERA_CAPTURE_INTERVAL_SECONDS
+        ):
+            capture_session.captured_frames.append(frame.copy())
+            capture_session.last_capture_at = now
+
+        elapsed_ms = min(int((now - capture_session.started_at) * 1000), CAMERA_PROGRESS_TOTAL_MS)
+        progress_bucket = elapsed_ms // CAMERA_PROGRESS_EMIT_MS
+        ready = (
+            elapsed_ms >= CAMERA_PROGRESS_TOTAL_MS
+            and len(capture_session.captured_frames) >= RAW_FRAMES_TO_CAPTURE
+        )
+
+        should_emit = progress_bucket != capture_session.last_progress_bucket
+        if should_emit:
+            capture_session.last_progress_bucket = progress_bucket
+
+        if ready and not capture_session.ready_emitted:
+            capture_session.ready_emitted = True
+            should_emit = True
+
+        if not should_emit:
+            return None
+
+        return {
+            "type": "collecting",
+            "progress": elapsed_ms,
+            "total": CAMERA_PROGRESS_TOTAL_MS,
+            "captured": len(capture_session.captured_frames),
+            "required": RAW_FRAMES_TO_CAPTURE,
+            "ready": ready,
+        }
+
+
+def begin_inference_session() -> list[np.ndarray] | None:
+    global capture_session
+    with session_lock:
+        if capture_session.inference_processed:
+            return None
+        capture_session.inference_processed = True
+        return [frame.copy() for frame in capture_session.captured_frames]
+
+
 def resize_frame(frame: np.ndarray, width: int, height: int) -> np.ndarray:
     if frame.shape[1] == width and frame.shape[0] == height:
         return frame
@@ -127,8 +198,7 @@ def resize_frame(frame: np.ndarray, width: int, height: int) -> np.ndarray:
 
 
 class FaceCollector:
-    """Collects FRAMES_TO_COLLECT face embeddings, averages them, and emits a
-    match_result event with profile metadata enriched from profiles.json."""
+    """Builds face embeddings and emits a match_result enriched from profiles.json."""
 
     def __init__(self, db_embeddings: np.ndarray, db_names: list[str], profiles: dict):
         self.face_model = insightface.app.FaceAnalysis(name="buffalo_l")
@@ -136,10 +206,9 @@ class FaceCollector:
         self.db_embeddings = db_embeddings
         self.db_names = db_names
         self.profiles = profiles
-        self.collected: list[np.ndarray] = []
 
     def reset(self):
-        self.collected = []
+        return None
 
     def _enrich(self, name: str, score: float) -> dict:
         profile = self.profiles.get(name, {})
@@ -153,12 +222,12 @@ class FaceCollector:
             "profile_url": profile.get("profile_url", ""),
         }
 
-    def process_frame(self, frame) -> dict | None:
+    def extract_embedding(self, frame) -> tuple[np.ndarray | None, dict | None]:
         frame = resize_frame(frame, FACE_WIDTH, FACE_HEIGHT)
         faces = self.face_model.get(frame)
 
         if len(faces) != 1:
-            return {
+            return None, {
                 "type": "face_error",
                 "reason": "no_face" if len(faces) == 0 else "multiple_faces",
                 "count": len(faces),
@@ -166,19 +235,12 @@ class FaceCollector:
 
         face = faces[0]
         if face.det_score <= MIN_DET_SCORE or face.embedding is None:
-            return None
+            return None, None
 
-        self.collected.append(face.embedding)
+        return face.embedding, None
 
-        if len(self.collected) < FRAMES_TO_COLLECT:
-            return {
-                "type": "collecting",
-                "progress": len(self.collected),
-                "total": FRAMES_TO_COLLECT,
-            }
-
-        avg_embedding = np.mean(self.collected, axis=0)
-        self.collected = []
+    def match_embeddings(self, embeddings: list[np.ndarray]) -> dict:
+        avg_embedding = np.mean(embeddings, axis=0)
 
         if len(self.db_embeddings) == 0:
             return {"type": "match_result", "matches": []}
@@ -216,10 +278,8 @@ def load_face_database() -> tuple[np.ndarray, list[str], dict]:
 
 
 def camera_loop():
-    # switch this with raspberry pi camera index when testing through raspberry pi
     cap = cv2.VideoCapture(LOCAL_CAMERA_IDX, cv2.CAP_V4L2)
-    # MJPG lets USB 2.0 cams actually hit 30fps at 720p; YUYV is bandwidth-capped to ~5fps.
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
     cap.set(cv2.CAP_PROP_FPS, 30)
@@ -247,7 +307,6 @@ def camera_loop():
         },
     )
 
-    # Preview-only timings; face/gesture work is tracked separately in analysis_loop.
     PERF_LOG_EVERY = 60
     perf = {"read": 0.0, "publish": 0.0, "encode": 0.0, "enqueue": 0.0, "total": 0.0}
     perf_frames = 0
@@ -271,7 +330,7 @@ def camera_loop():
 
         t0 = time.perf_counter()
         stream_frame = resize_frame(frame, STREAM_WIDTH, STREAM_HEIGHT)
-        ok, buffer = cv2.imencode('.jpg', stream_frame, [cv2.IMWRITE_JPEG_QUALITY, 55])
+        ok, buffer = cv2.imencode(".jpg", stream_frame, [cv2.IMWRITE_JPEG_QUALITY, 55])
         encode_ms = (time.perf_counter() - t0) * 1000.0
 
         enqueue_ms = 0.0
@@ -295,17 +354,16 @@ def camera_loop():
         if perf_frames >= PERF_LOG_EVERY:
             avg = {k: v / perf_frames for k, v in perf.items()}
             fps = 1000.0 / avg["total"] if avg["total"] > 0 else 0.0
-            qsize = event_queue.qsize()
             write_perf_log(
                 "preview_perf",
                 frames=perf_frames,
                 states=perf_state_counts,
                 avg_ms=avg,
                 fps=fps,
-                queue_size=qsize,
+                queue_size=event_queue.qsize(),
             )
-            for k in perf:
-                perf[k] = 0.0
+            for key in perf:
+                perf[key] = 0.0
             perf_frames = 0
             perf_state_counts = {}
 
@@ -313,7 +371,7 @@ def camera_loop():
 def analysis_loop():
     last_seq = 0
     PERF_LOG_EVERY = 20
-    perf = {"gesture": 0.0, "face": 0.0, "total": 0.0}
+    perf = {"gesture": 0.0, "face": 0.0, "camera": 0.0, "total": 0.0}
     perf_processed = 0
     perf_dropped = 0
     perf_state_counts: dict[str, int] = {}
@@ -335,6 +393,7 @@ def analysis_loop():
         loop_t0 = time.perf_counter()
         gesture_ms = 0.0
         face_ms = 0.0
+        camera_ms = 0.0
 
         if state == "idle" and thumbs_detector is not None:
             t0 = time.perf_counter()
@@ -349,20 +408,67 @@ def analysis_loop():
                     thumbs_detector.reset()
                 enqueue_event({"type": "thumbs_up_detected"}, source="thumbs_detector")
 
-        elif state == "camera" and face_collector is not None:
-            face_input = validation_frame if validation_frame is not None else frame
+        elif state == "camera":
             t0 = time.perf_counter()
-            with detector_lock:
-                event = face_collector.process_frame(face_input)
-            face_ms = (time.perf_counter() - t0) * 1000.0
+            capture_source = validation_frame if validation_frame is not None else frame
+            event = update_camera_session(capture_source)
+            camera_ms = (time.perf_counter() - t0) * 1000.0
 
             current, current_version = get_state_snapshot()
             if event is not None and current == "camera" and current_version == version:
-                enqueue_event(event, source="face_collector")
+                enqueue_event(event, source="camera_session")
+
+        elif state == "inference" and face_collector is not None:
+            captured_frames = begin_inference_session()
+            if captured_frames is None:
+                time.sleep(0.01)
+                continue
+
+            t0 = time.perf_counter()
+            embeddings: list[np.ndarray] = []
+            saw_multiple_faces = False
+
+            for captured in captured_frames:
+                with detector_lock:
+                    embedding, error = face_collector.extract_embedding(captured)
+
+                current, current_version = get_state_snapshot()
+                if current != "inference" or current_version != version:
+                    embeddings = []
+                    break
+
+                if error is not None:
+                    if error.get("reason") == "multiple_faces":
+                        saw_multiple_faces = True
+                    continue
+
+                if embedding is not None:
+                    embeddings.append(embedding)
+                    if len(embeddings) >= FRAMES_TO_COLLECT:
+                        break
+
+            current, current_version = get_state_snapshot()
+            if current == "inference" and current_version == version:
+                if len(embeddings) >= FRAMES_TO_COLLECT:
+                    with detector_lock:
+                        event = face_collector.match_embeddings(embeddings[:FRAMES_TO_COLLECT])
+                    enqueue_event(event, source="face_collector")
+                else:
+                    enqueue_event(
+                        {
+                            "type": "face_error",
+                            "reason": "multiple_faces" if saw_multiple_faces else "no_face",
+                            "count": 2 if saw_multiple_faces else 0,
+                        },
+                        source="face_collector",
+                    )
+
+            face_ms = (time.perf_counter() - t0) * 1000.0
 
         total_ms = (time.perf_counter() - loop_t0) * 1000.0
         perf["gesture"] += gesture_ms
         perf["face"] += face_ms
+        perf["camera"] += camera_ms
         perf["total"] += total_ms
         perf_processed += 1
         perf_state_counts[state] = perf_state_counts.get(state, 0) + 1
@@ -378,8 +484,8 @@ def analysis_loop():
                 avg_ms=avg,
                 throughput_fps=throughput,
             )
-            for k in perf:
-                perf[k] = 0.0
+            for key in perf:
+                perf[key] = 0.0
             perf_processed = 0
             perf_dropped = 0
             perf_state_counts = {}
@@ -389,7 +495,6 @@ async def broadcast_event():
     global latest_frame
     while True:
         try:
-            # Drain all pending JSON events first so status never lags frames.
             while True:
                 try:
                     event = event_queue.get_nowait()
@@ -404,8 +509,6 @@ async def broadcast_event():
                         event_type=event.get("type"),
                     )
 
-            # Then grab + clear the newest frame; any older frame has already
-            # been overwritten by camera_loop, which is exactly what we want.
             frame_to_send: bytes | None = None
             with frame_lock:
                 if latest_frame is not None:
@@ -421,8 +524,7 @@ async def broadcast_event():
 
 
 def _apply_state_change(new_state: str):
-    """Reset the detector for the state we're entering, then update current_state.
-    Reset before the swap so camera_loop never sees a stale detector."""
+    """Reset detector/session state for the state we're entering."""
     global current_state, state_version
     with state_lock:
         old_state = current_state
@@ -433,19 +535,23 @@ def _apply_state_change(new_state: str):
             thumbs_detector.reset()
         elif new_state == "camera" and face_collector is not None:
             face_collector.reset()
+    if new_state == "camera":
+        reset_capture_session()
+    elif new_state in ("idle", "output"):
+        reset_capture_session()
     write_perf_log("state_change", old_state=old_state, new_state=new_state)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global thumbs_detector, face_collector
+    global thumbs_detector, face_collector, validation_frame
     print(f"Perf log file: {PERF_LOG_PATH}", flush=True)
     write_perf_log("server_start", perf_log_path=str(PERF_LOG_PATH))
+
     db_embeddings, db_names, profiles = load_face_database()
     face_collector = FaceCollector(db_embeddings, db_names, profiles)
     thumbs_detector = ThumbsUpDetector()
 
-    global validation_frame
     validation_frame = load_validation_frame(RAW_IMAGES_DIR)
     write_perf_log(
         "validation_frame_loaded",
@@ -488,7 +594,7 @@ async def websocket_camera(websocket: WebSocket):
                 continue
             if msg.get("type") == "state_change":
                 new_state = msg.get("state")
-                if new_state in ("idle", "camera", "output"):
+                if new_state in ("idle", "camera", "inference", "output"):
                     write_perf_log("state_change_requested", requested_state=new_state, payload=msg)
                     _apply_state_change(new_state)
     except WebSocketDisconnect:

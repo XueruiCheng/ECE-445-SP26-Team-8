@@ -1,7 +1,4 @@
-1. Camera feed is very low frames
 2. Bluetooth setup from esp32 buttons eventually
-3. More complexity to the frontend or more visual appeal
-4. Still using a fake dataset, and need some sort of veriifcation or proof of classificationa accuracy
-   this can be done by adding our own images and seeing if they will be matched with
 6. Change the hand gesture our cv is looking for
 7. Find a better final output
+8. create readme with the commands to do both like intial setup and also run the validation loop

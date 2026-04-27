@@ -43,8 +43,15 @@ import { MirrorStateService } from '../../services/mirror-state.service';
       </div>
 
       @if (mirrorState.collecting$ | async; as c) {
-        <div class="progress">
-          ANALYZING {{ c.progress }} / {{ c.total }}
+        <div class="progress-panel">
+          <div class="progress-header">
+            <span class="progress-label">FACE MATRIX</span>
+            <span class="progress-value">{{ progressPercent(c.progress, c.total).toFixed(0) }}%</span>
+          </div>
+          <div class="progress-rail">
+            <div class="progress-fill" [style.width.%]="progressPercent(c.progress, c.total)"></div>
+          </div>
+          <div class="progress-caption">COLLECTING FACIAL SIGNATURE</div>
         </div>
       } @else if (mirrorState.faceError$ | async; as err) {
         <div class="error">
@@ -78,6 +85,7 @@ export class CameraComponent implements AfterViewInit, OnDestroy {
 
   constructor() {
     this.framesSub = this.webSocket.frames$.subscribe((blob) => {
+      if (!blob) return;
       this.pendingBlob = blob;
       if (!this.decodeInFlight) {
         void this.flushLatestFrame();
@@ -102,6 +110,11 @@ export class CameraComponent implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     this.destroyed = true;
     this.framesSub.unsubscribe();
+  }
+
+  progressPercent(progress: number, total: number): number {
+    if (total <= 0) return 0;
+    return Math.max(0, Math.min(100, (progress / total) * 100));
   }
 
   private async flushLatestFrame(): Promise<void> {
