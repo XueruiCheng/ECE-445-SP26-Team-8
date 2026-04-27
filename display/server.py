@@ -24,7 +24,6 @@ import insightface
 WARMUP_FRAMES = 60
 MIN_DET_SCORE = 0.7
 FRAMES_TO_COLLECT = 6
-INFERENCE_EVERY_N_FRAMES = 3
 LOGITECH_RASP_CAMERA_IDX = '/dev/video0'
 LOCAL_CAMERA_IDX = 0
 
@@ -56,9 +55,16 @@ latest_frame: bytes | None = None
 frame_lock = threading.Lock()
 active_websocket: WebSocket | None = None
 perf_log_lock = threading.Lock()
+detector_lock = threading.Lock()
+
+analysis_frame: np.ndarray | None = None
+analysis_frame_seq = 0
+analysis_lock = threading.Lock()
 
 # Mutated only by the WebSocket handler (single writer); read by camera_loop.
 current_state: str = "idle"
+state_version = 0
+state_lock = threading.Lock()
 
 thumbs_detector: ThumbsUpDetector | None = None
 face_collector = None  # type: FaceCollector | None
@@ -94,6 +100,26 @@ def enqueue_event(event: dict, source: str) -> None:
     )
 
 
+def get_state_snapshot() -> tuple[str, int]:
+    with state_lock:
+        return current_state, state_version
+
+
+def publish_analysis_frame(frame: np.ndarray) -> None:
+    global analysis_frame, analysis_frame_seq
+    with analysis_lock:
+        analysis_frame = frame
+        analysis_frame_seq += 1
+
+
+def take_latest_analysis_frame(last_seq: int) -> tuple[np.ndarray | None, int, int]:
+    with analysis_lock:
+        if analysis_frame is None or analysis_frame_seq == last_seq:
+            return None, last_seq, 0
+        dropped = max(0, analysis_frame_seq - last_seq - 1)
+        return analysis_frame, analysis_frame_seq, dropped
+
+
 def resize_frame(frame: np.ndarray, width: int, height: int) -> np.ndarray:
     if frame.shape[1] == width and frame.shape[0] == height:
         return frame
@@ -111,11 +137,9 @@ class FaceCollector:
         self.db_names = db_names
         self.profiles = profiles
         self.collected: list[np.ndarray] = []
-        self._frame_count = 0
 
     def reset(self):
         self.collected = []
-        self._frame_count = 0
 
     def _enrich(self, name: str, score: float) -> dict:
         profile = self.profiles.get(name, {})
@@ -130,10 +154,6 @@ class FaceCollector:
         }
 
     def process_frame(self, frame) -> dict | None:
-        self._frame_count += 1
-        if self._frame_count % INFERENCE_EVERY_N_FRAMES != 0:
-            return None
-
         frame = resize_frame(frame, FACE_WIDTH, FACE_HEIGHT)
         faces = self.face_model.get(frame)
 
@@ -227,9 +247,9 @@ def camera_loop():
         },
     )
 
-    # Per-stage timing accumulators (ms), flushed to stdout every PERF_LOG_EVERY frames.
-    PERF_LOG_EVERY = 30
-    perf = {"read": 0.0, "gesture": 0.0, "face": 0.0, "encode": 0.0, "enqueue": 0.0, "total": 0.0}
+    # Preview-only timings; face/gesture work is tracked separately in analysis_loop.
+    PERF_LOG_EVERY = 60
+    perf = {"read": 0.0, "publish": 0.0, "encode": 0.0, "enqueue": 0.0, "total": 0.0}
     perf_frames = 0
     perf_state_counts: dict[str, int] = {}
 
@@ -243,28 +263,11 @@ def camera_loop():
             continue
 
         frame = cv2.flip(frame, 1)
+        state, _ = get_state_snapshot()
 
-        ts_ms = int(time.monotonic() * 1000)
-        state = current_state
-
-        gesture_ms = 0.0
-        face_ms = 0.0
-
-        if state == "idle" and thumbs_detector is not None:
-            t0 = time.perf_counter()
-            thumbs_frame = resize_frame(frame, THUMBS_WIDTH, THUMBS_HEIGHT)
-            triggered = thumbs_detector.process_frame(thumbs_frame, ts_ms)
-            gesture_ms = (time.perf_counter() - t0) * 1000.0
-            if triggered:
-                enqueue_event({"type": "thumbs_up_detected"}, source="thumbs_detector")
-                thumbs_detector.reset()
-        elif state == "camera" and face_collector is not None:
-            face_input = validation_frame if validation_frame is not None else frame
-            t0 = time.perf_counter()
-            event = face_collector.process_frame(face_input)
-            face_ms = (time.perf_counter() - t0) * 1000.0
-            if event is not None:
-                enqueue_event(event, source="face_collector")
+        t0 = time.perf_counter()
+        publish_analysis_frame(frame)
+        publish_ms = (time.perf_counter() - t0) * 1000.0
 
         t0 = time.perf_counter()
         stream_frame = resize_frame(frame, STREAM_WIDTH, STREAM_HEIGHT)
@@ -282,8 +285,7 @@ def camera_loop():
         total_ms = (time.perf_counter() - loop_t0) * 1000.0
 
         perf["read"] += read_ms
-        perf["gesture"] += gesture_ms
-        perf["face"] += face_ms
+        perf["publish"] += publish_ms
         perf["encode"] += encode_ms
         perf["enqueue"] += enqueue_ms
         perf["total"] += total_ms
@@ -295,7 +297,7 @@ def camera_loop():
             fps = 1000.0 / avg["total"] if avg["total"] > 0 else 0.0
             qsize = event_queue.qsize()
             write_perf_log(
-                "perf_summary",
+                "preview_perf",
                 frames=perf_frames,
                 states=perf_state_counts,
                 avg_ms=avg,
@@ -305,6 +307,81 @@ def camera_loop():
             for k in perf:
                 perf[k] = 0.0
             perf_frames = 0
+            perf_state_counts = {}
+
+
+def analysis_loop():
+    last_seq = 0
+    PERF_LOG_EVERY = 20
+    perf = {"gesture": 0.0, "face": 0.0, "total": 0.0}
+    perf_processed = 0
+    perf_dropped = 0
+    perf_state_counts: dict[str, int] = {}
+
+    while True:
+        state, version = get_state_snapshot()
+        if state == "output":
+            time.sleep(0.01)
+            continue
+
+        frame, next_seq, dropped = take_latest_analysis_frame(last_seq)
+        if frame is None:
+            time.sleep(0.005)
+            continue
+
+        last_seq = next_seq
+        perf_dropped += dropped
+
+        loop_t0 = time.perf_counter()
+        gesture_ms = 0.0
+        face_ms = 0.0
+
+        if state == "idle" and thumbs_detector is not None:
+            t0 = time.perf_counter()
+            thumbs_frame = resize_frame(frame, THUMBS_WIDTH, THUMBS_HEIGHT)
+            with detector_lock:
+                triggered = thumbs_detector.process_frame(thumbs_frame, int(time.monotonic() * 1000))
+            gesture_ms = (time.perf_counter() - t0) * 1000.0
+
+            current, current_version = get_state_snapshot()
+            if triggered and current == "idle" and current_version == version:
+                with detector_lock:
+                    thumbs_detector.reset()
+                enqueue_event({"type": "thumbs_up_detected"}, source="thumbs_detector")
+
+        elif state == "camera" and face_collector is not None:
+            face_input = validation_frame if validation_frame is not None else frame
+            t0 = time.perf_counter()
+            with detector_lock:
+                event = face_collector.process_frame(face_input)
+            face_ms = (time.perf_counter() - t0) * 1000.0
+
+            current, current_version = get_state_snapshot()
+            if event is not None and current == "camera" and current_version == version:
+                enqueue_event(event, source="face_collector")
+
+        total_ms = (time.perf_counter() - loop_t0) * 1000.0
+        perf["gesture"] += gesture_ms
+        perf["face"] += face_ms
+        perf["total"] += total_ms
+        perf_processed += 1
+        perf_state_counts[state] = perf_state_counts.get(state, 0) + 1
+
+        if perf_processed >= PERF_LOG_EVERY:
+            avg = {k: v / perf_processed for k, v in perf.items()}
+            throughput = 1000.0 / avg["total"] if avg["total"] > 0 else 0.0
+            write_perf_log(
+                "analysis_perf",
+                processed=perf_processed,
+                dropped_frames=perf_dropped,
+                states=perf_state_counts,
+                avg_ms=avg,
+                throughput_fps=throughput,
+            )
+            for k in perf:
+                perf[k] = 0.0
+            perf_processed = 0
+            perf_dropped = 0
             perf_state_counts = {}
 
 
@@ -346,13 +423,16 @@ async def broadcast_event():
 def _apply_state_change(new_state: str):
     """Reset the detector for the state we're entering, then update current_state.
     Reset before the swap so camera_loop never sees a stale detector."""
-    global current_state
-    old_state = current_state
-    if new_state == "idle" and thumbs_detector is not None:
-        thumbs_detector.reset()
-    elif new_state == "camera" and face_collector is not None:
-        face_collector.reset()
-    current_state = new_state
+    global current_state, state_version
+    with state_lock:
+        old_state = current_state
+        state_version += 1
+        current_state = new_state
+    with detector_lock:
+        if new_state == "idle" and thumbs_detector is not None:
+            thumbs_detector.reset()
+        elif new_state == "camera" and face_collector is not None:
+            face_collector.reset()
     write_perf_log("state_change", old_state=old_state, new_state=new_state)
 
 
@@ -374,6 +454,7 @@ async def lifespan(app: FastAPI):
     )
 
     threading.Thread(target=camera_loop, daemon=True).start()
+    threading.Thread(target=analysis_loop, daemon=True).start()
     asyncio.create_task(broadcast_event())
     yield
     write_perf_log("server_stop")
