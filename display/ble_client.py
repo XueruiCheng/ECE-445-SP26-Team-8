@@ -14,7 +14,7 @@ import server
 
 
 DEVICE_NAME = "ESP32 Selector"
-SERVICE_UUID = "12345678-1234-1234-1234-123456789abc"
+ADDRESS = "8E6AA1FA-3B99-4A4D-BC3E-ADFB34EC55D6"
 CHAR_UUID = "abcd1234-ab12-ab12-ab12-abcdef123456"
 VALID = {"scientist", "engineer", "entrepreneur"}
 
