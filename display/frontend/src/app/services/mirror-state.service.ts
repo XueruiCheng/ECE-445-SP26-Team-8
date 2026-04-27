@@ -16,7 +16,7 @@ export interface FaceError {
   count: number;
 }
 
-const OUTPUT_AUTO_IDLE_MS = 15000;
+const OUTPUT_AUTO_IDLE_MS = 35000;
 
 @Injectable({ providedIn: 'root' })
 export class MirrorStateService {
