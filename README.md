@@ -46,15 +46,54 @@ cd display/frontend
 npm run build
 ```
 
-Command to connect your raspberry pi to your local hosted server
+### Launching the kiosk with xinit
+
+The recommended way to start the full kiosk (xrandr setup, frontend build, uvicorn server, and Chromium in kiosk mode) is via [start-kiosk.sh](start-kiosk.sh):
+
+```bash
+xinit ./start-kiosk.sh -- :0
+```
+
+`xinit` boots a minimal X server on display `:0` and runs `start-kiosk.sh` as the X client. The script handles:
+- Activating the project `venv` if present
+- Rotating `HDMI-2` and disabling `HDMI-1` via `xrandr`
+- Disabling screen blanking / DPMS and hiding the cursor with `unclutter`
+- Building the React frontend (`npm run build` in [display/frontend/](display/frontend/))
+- Starting the FastAPI backend (`uvicorn server:app` on port `8000`)
+- Waiting for the server to come up, then launching Chromium in `--kiosk` mode pointed at the splash page
+
+Logs are appended to `/tmp/kiosk.log`.
+
+If you only want a bare-bones launch without the helper script:
 ```bash
 xinit /bin/bash -c "chromium-browser --kiosk http://localhost:8000" -- :0
 ```
 
-Recommended kiosk launcher
+### Validation mode
+
+Validation mode lets you demo the pipeline end-to-end with a known expected match. The webcam preview and thumbs-up gesture detection still run normally, but the frame fed into the face model is replaced with a noisy version of a reference image from [model/data/raw_images/](model/data/raw_images/). See [display/validation_loop.py](display/validation_loop.py) for the noise pipeline.
+
+Launch via `start-kiosk.sh` with the `--validate` flag and the figure's name (matched against `<name>.jpg` in the raw images directory, with spaces and underscores interchangeable):
+
 ```bash
-xinit ./start-kiosk.sh -- :0
+xinit ./start-kiosk.sh --validate "Avery Broderick" -- :0
 ```
+
+Noise level defaults to `harsh`; override with the `VALIDATE_NOISE` env var (`mild` or `harsh`):
+
+```bash
+VALIDATE_NOISE=mild xinit ./start-kiosk.sh --validate "Avery Broderick" -- :0
+```
+
+You can also run validation mode without the kiosk wrapper by exporting `VALIDATE_NAME` before starting the server:
+
+```bash
+export VALIDATE_NAME="Avery Broderick"
+export VALIDATE_NOISE=harsh   # optional: mild | harsh
+uvicorn display.server:app --host 0.0.0.0 --port 8000
+```
+
+Unset `VALIDATE_NAME` (or omit `--validate`) to return to normal operation.
 
 ## Hardware
 
