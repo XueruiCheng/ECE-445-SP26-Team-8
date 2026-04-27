@@ -39,7 +39,7 @@ fi
 OUTPUT="HDMI-2"
 OTHER_OUTPUT="HDMI-1"
 ROTATION="left"
-URL="http://localhost:4200"
+URL="http://localhost:8000"
 
 echo "---- xrandr -q (before) ----"
 xrandr -q || true
@@ -56,8 +56,7 @@ xset s noblank
 xsetroot -solid black || true
 
 cd "$REPO_DIR/display/frontend"
-npm start -- --host 0.0.0.0 --port 4200 &
-NG_PID=$!
+npm run build
 
 cd "$REPO_DIR/display"
 uvicorn server:app --host 0.0.0.0 --port 8000 &
@@ -67,10 +66,9 @@ UV_PID=$!
 unclutter -idle 0 -root &
 UNCLUTTER_PID=$!
 
-cleanup() { kill "$NG_PID" "$UV_PID" "$UNCLUTTER_PID" 2>/dev/null || true; }
+cleanup() { kill "$UV_PID" "$UNCLUTTER_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
-until curl -fsS http://localhost:4200 >/dev/null 2>&1; do sleep 1; done
 until curl -fsS http://localhost:8000 >/dev/null 2>&1; do sleep 1; done
 
 exec chromium-browser \

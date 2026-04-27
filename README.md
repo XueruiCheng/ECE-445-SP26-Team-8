@@ -40,9 +40,20 @@ Command to run your server
 uvicorn display.server:app --host 0.0.0.0 --port 8000
 ```
 
+Build the frontend before kiosk/server runs
+```bash
+cd display/frontend
+npm run build
+```
+
 Command to connect your raspberry pi to your local hosted server
 ```bash
 xinit /bin/bash -c "chromium-browser --kiosk http://localhost:8000" -- :0
+```
+
+Recommended kiosk launcher
+```bash
+xinit ./start-kiosk.sh -- :0
 ```
 
 ## Hardware
