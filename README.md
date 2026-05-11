@@ -25,6 +25,21 @@ python main.py
 - Press `ESC` at any point to cancel
 
 
+## Updating the image database
+
+The matcher relies on two artifacts in [model/data/](model/data/): `embeddings.npy` (NumPy array of face embeddings) and `names.json` (parallel list of names — the *i*-th name corresponds to row *i* of the array). Both are regenerated from `profiles.json` + `raw_images/` by [model/embed_dataset.py](model/embed_dataset.py), so the workflow for adding/removing people is:
+
+1. **Add or remove images.** Drop new images into [model/data/raw_images/](model/data/raw_images/) as `<person_id>.jpg`, or delete the ones you no longer want. `<person_id>` should be a stable, ASCII-safe slug.
+2. **Update [model/data/profiles.json](model/data/profiles.json).** Each entry is keyed by `person_id` and must include at minimum a `name` and the `image_path` pointing at the file you just added. Other fields used by the UI (`role`, `position`, `research_areas`, `summary`, `category`, `profile_url`) should be filled in if you want them to appear on the result screen. Categories are `scientist`, `engineer`, or `entrepreneur` and are what the front-end filter buttons key off of.
+3. **Re-run the embedder before the new entries are picked up:**
+   ```bash
+   python -m model.embed_dataset
+   ```
+   This loads every profile, runs InsightFace's `buffalo_l` model on each image, and rewrites `embeddings.npy` + `names.json` together. Anyone whose image is missing or has no detectable face is printed in the `Skipped:` list at the end — fix those and re-run if you care about them.
+
+If instead you want to re-scrape the source sites from scratch (Perimeter Institute, iQuIST, Quantum Insider CTOs), run `python -m model.dataset_builder` first — that rewrites `profiles.json` and re-downloads images — then run `python -m model.embed_dataset` to rebuild the embeddings. `embeddings.npy` and `names.json` should never be edited by hand; always regenerate them via `embed_dataset.py` so they stay in sync.
+
+
 ## Raspberry Pi
 
 Once you have connected your Raspberry Pi to your monitor and hooked up a keyboard through the USB-port, try running this command to see
